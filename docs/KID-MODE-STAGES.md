@@ -62,8 +62,10 @@ it. Add pages to a **new** family, never to GLO.
 
 The first sweep followed the page system. This one followed **raw button bits** — because the FM-1 gives a
 button three different meanings depending on how long it is held and what is held with it, and those
-paths do not consult `PAGES[]` at all. Ten more findings, and the first three are the worst in the whole
-document for the *experience* (a 10-year-old does exactly these things).
+paths do not consult `PAGES[]` at all. Findings 21–43 came from three more passes — raw button bits, then
+the input plumbing, then a walk through the first hour she would actually spend with it (findings 41–43
+are that walk, and they are the ones about her *own* work). The first three are the worst in the whole
+document for the experience: a 10-year-old does exactly these things.
 
 | # | finding | sev | evidence | what happens | fix | stage |
 |---|---|---|---|---|---|---|
