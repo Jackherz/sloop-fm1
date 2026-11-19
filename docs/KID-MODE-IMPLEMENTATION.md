@@ -129,11 +129,14 @@ silent the moment a mission follows a visit to the DRUMS grid page. So:
     page_fix(); ... midi_entry();                       /* unchanged */
     kb_grid = (uint8_t)grid_keys_on();                  /* 1132: must run on every pass */
     if (home == BT_HOLD && !kid_on()) { ...open the menu... }      /* 1120, now guarded */
-    if (kid_on() && kid_input(pressed, notes, home)) { ui.force |= kid_dirty; return; }
+    if (kid_on() && kid_input(pressed, notes, home)) { ui.force = 1; return; }
     if (ui.menu) { ... }                                /* unchanged */
 ```
 
-`kid_input()` gets `home` from line 1107, so nothing else has to move.
+`kid_input()` gets `home` from line 1107, so nothing else has to move. Two rules for what it does
+there: it **drains every encoder** (`panel_enc()` for all seven roles — `enc_hold` returns before the
+take and so does not drain, `fm1_input.h:341`), and it sets `ui.force = 1` (`force` is a boolean,
+`ui.c:63`, not a bitmask).
 
 `kid_input()` then has two different jobs, and they must not be confused:
 
@@ -270,9 +273,14 @@ the next boot will restore stale kits.
   reduced item list: `UNLOCK ALL`, `RESET PROGRESS`, `VOLUME LIMIT`, `BACKUP REMINDER`.
   Reuse `ui.menu`/`ui.menu_sel` rather than a new screen; `menu_input()` already handles knobs.
 - **Not a PIN.** A 10-year-old will find it in a week. The design is guidance, not security.
-- **Volume ceiling:** `main.c` ~285 computes `song.master_q12` from the analog MASTER pot. A kid build
-  can clamp it to ~70 %. Verify against `tests/golden.txt` (master gain is applied after the mix, so it
-  should be invisible) and make the clamp a runtime flag so the parent menu can lift it.
+- **Volume ceiling:** `main.c:283` sets `song.master_q12 = (k10 * k10) >> 8` (0..4092) from the analog
+  MASTER pot. Clamp the *result*, not `k10`, to ~70 %: lines 278–282 let the LIVE page's encoder
+  **override** the pot (`k10 = (ed_master - 1) * 1023 / 126`), so a clamp on the pot value alone is
+  bypassed by turning the knob on that page. One clamp after line 283, a runtime flag the parent menu
+  lifts. Master gain is applied after the mix, so `tests/golden.txt` should be untouched — confirm it.
+- **Battery:** there is no low-battery warning anywhere in the stock firmware, only the header icon
+  (`ui_draw.c:26-36`). Autosave is the real protection, so her song survives a flat battery; the
+  *mission* does not. One `ui_say()` on the way down is enough, with hysteresis so it cannot loop.
 - **Taking it off:** keep the existing UPDATE MODE combo (OCT− + OCT+ 5 s) working, and keep
   `FELUCCA_OTA` on. You will want to push fixes in January.
 
@@ -427,6 +435,9 @@ written after a code sweep that found two ways to lose her work.**
   gate.
 - **Never early-return before `kb_grid = grid_keys_on()`** (`ui_input.c:1132`): the drums go silent when
   a mission follows a visit to the grid page (finding 31).
+- **Drain the encoders** (`fm1_input.h:341`): `enc_steps[]` accumulates until taken, and `enc_hold` does
+  not drain — a kid screen that ignores them makes the next value jump by everything she spun
+  (finding 33). `ui.force` is a boolean, not a bitmask (finding 34).
 - **`FAM_BTN[]` zero-fills a missing entry** to `B_FX` (`ui_input.c:28`), so a new family needs its
   initialiser in the same edit — C will not warn.
 - **Header messages are 24 bytes** (`ui.c:86`), and a kid screen that replaces the header hides them —

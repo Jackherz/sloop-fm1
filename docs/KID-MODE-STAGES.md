@@ -80,9 +80,21 @@ document for the *experience* (a 10-year-old does exactly these things).
 | 31 | **An early return before `kb_grid` makes the keys silent** | S1 | `ui_input.c:1132` (`kb_grid = grid_keys_on()`), `seq.c:2257` (`is_drum && layer == LY_PLAY && kb_grid` → a step key, no sound), `ui_studio.c:515` | `kb_grid` is a **volatile** flag the audio ISR reads. Insert the kid handler "before the HOME block" as first written, and the refresh never runs while a kid screen is up — so the last value sticks. Come from the DRUMS grid page into a mission and every white key is swallowed as a step: the instrument goes silent and looks broken. | put the kid handler **after** line 1132 (it only needs `home`, computed at 1107) and guard the menu block with `!kid_on()`; or set `kb_grid = 0` inside the kid handler | S1 |
 | 32 | **Kid screens hide the messages, including the parent's** | S3 | `ui_draw.c:52-56` (`ui.msg` in the header), `main.c:296-306` (UPDATE MODE countdown via `ui_say`) | Every message — `NOT YET · LEVEL n`, "SAVED SECTION D", the update-mode countdown — is drawn by the stock header. A kid screen that replaces the header hides all of them, so the parent's countdown would be invisible and a save would look like nothing happened. | keep a 20 px header band on kid screens and draw `ui.msg` in it, exactly as the house does | S3 |
 
+| 33 | **Encoder detents accumulate while no one takes them** | S2 | `fm1_input.h:95` (`int16_t enc_steps[]`), `:341-348` `fm1_enc_take()` clears on read, `panel.c:60-69` `panel_enc()` | A kid screen that returns before reading the encoders leaves `enc_steps[]` filling up. Spin SELECT on the clubhouse, walk into the sandbox, and the first read applies *all* of it — the tempo or the value jumps. `enc_hold` does not help: it returns *before* the take, so it does not drain. | the kid screen calls `panel_enc()` for all seven roles every pass: use SELECT for navigation, discard the rest | S3 |
+| 34 | **`ui.force` is a boolean, not a bitmask** | S3 | `ui.c:63` (`uint8_t force; /* full redraw pending */`), used as `if (ui.force)` / `if (!ui.force …)` | An `ui.force |= kid_dirty` idiom works today (any non-zero is true) and breaks the day someone masks it. Not a bug yet; a trap for the next reader. | write `ui.force = 1` in kid code | S3 |
+| 35 | **The volume ceiling must be clamped after the LIVE-page override** | S11 | `main.c:278-283`: `k10` from the pot, replaced by the encoder when `ed_master` is set, then `master_q12 = k10*k10>>8` | Clamp the pot and a child (or a parent) lifts the ceiling by turning the knob on the LIVE page — the encoder path never touches the pot. | one clamp on `song.master_q12` after line 283 | S11 |
+| 36 | **No low-battery warning exists** | S11 | `ui_draw.c:26-36` (the icon only), no `batt` handler anywhere else | The unit just dies. Autosave keeps her song; a mission's progress in flight is lost. | one `ui_say()` at level 0, with hysteresis | S11 |
+
+**Verified safe, recorded so no one re-checks them:** `section_store()` captures to RAM and defers the
+flash write until the transport is stopped and nothing sounds (`project.c:1121-1130`) — **no erase ever
+runs in the audio ISR**; `undo_sess` is `uint32_t` (`seq.c:455`), so sessions cannot wrap into each
+other's undo buffers; `proj_ok()` checks magic, size *and* a full checksum (`project.c:164`), so garbage
+in the `.noinit` slots cannot be mistaken for a project.
+
 **The shape this gives the gate** (revised in §2.2): pages, values, and raw bits. Three levels, and a
-button has to be blocked at all three or it is not blocked. Finding 31 is the reminder that the gate must
-also *not* skip the bookkeeping lines around it.
+button has to be blocked at all three or it is not blocked. Findings 31 and 33 are the reminder that a
+gate which *returns early* has to leave the instrument exactly as the ISR expects it: the `kb_grid`
+refresh still runs, and the encoders are still drained.
 
 ## 2. Decisions these force (changes to the other docs)
 
@@ -220,8 +232,8 @@ gift would still be good. Sizes are estimates from the measurement doc's shares;
 |---|---|
 | **Goal** | She can see where she is and the four buttons work. |
 | **Work** | `FAM_KID` **appended** to `PAGES[]`; the three-band draw (§2.3); `kid_input()` inserted after `page_fix()`/`midi_entry()` and before `if (home == BT_HOLD)` (`ui_input.c:1120`); `SEQ` = hint, `EDIT` = undo, `HOME` tap = rooms, `HOME` held 3 s = parent (own timer — `btn_hold()` is fixed at 700 ms, `ui_input.c:765`); force `ui.menu = 0`, clear `hold_kind`/layer locks/`ui.home_t0` on entry (finding 13); `song.seq_mode = 0` on the kid page (finding 19); kid-mode handling of the UBOOT combo (finding 10). |
-| **Work (also)** | extend `FAM_BTN[]` in the same edit as the enum (finding 27); keep every header message under 24 bytes (finding 28); redraw on state change only (finding 30); **keep the 20 px header band and draw `ui.msg` in it** so the parent's messages and the update countdown are not hidden (finding 32). |
-| **Exit** | On the device: the screen is legible at arm's length, the four buttons do what the footer says, and a 5-minute button mash cannot leave the clubhouse or open a menu. |
+| **Work (also)** | extend `FAM_BTN[]` in the same edit as the enum (finding 27); keep every header message under 24 bytes (finding 28); redraw on state change only (finding 30); **keep the 20 px header band and draw `ui.msg` in it** (finding 32); **drain all seven encoders every pass** — SELECT navigates, the rest are read and dropped (finding 33); `ui.force = 1`, never `|=` (finding 34). |
+| **Exit** | On the device: the screen is legible at arm's length, the four buttons do what the footer says, a 5-minute button mash cannot leave the clubhouse or open a menu, and **thirty turns of SELECT on the clubhouse followed by a walk into the sandbox changes no value** (finding 33). |
 | **Tests** | kid test: input consumed map (a table of button → expected effect, driven through `kid_input()` directly). Manual: mash test, power-on test with palms on the panel. |
 | **Size** | ~900 B. |
 | **Risk** | the first stage that needs the hardware to judge. If the second unit has not arrived, use the WASM preview for layout and accept that the feel is unverified. |
