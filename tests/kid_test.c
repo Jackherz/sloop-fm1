@@ -86,6 +86,10 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
         nor[off + i] &= s[i];   /* NOR: programming only clears bits */
     return 0;
 }
+static uint32_t irq_save(void) { return 0; }
+static void irq_restore(uint32_t f) { (void)f; }
+static void fl_plain_window_init(void) {}
+static void up_boot(void) {}
 #include "../firmware/src/storage.c"
 #include "../firmware/src/project.c"
 #include "../firmware/src/kid.c"
