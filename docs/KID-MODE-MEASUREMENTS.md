@@ -65,12 +65,18 @@ The app slot is **581,564 B** (`tools/fm1pkg_make.py`). The generated constant d
 | `SMP_DATA` — 8 CC0 sample sets, IMA ADPCM | **283,212** | **48.7 %** |
 | drum kits (`DS_KITS`, 32 kits × 16 sounds) | ~11,300 | 1.9 % |
 | fonts (Terminus 8×16 + 16×32 as 2×, shared bitmap) | ~7,000 | 1.2 % |
-| boot logo (RLE; `FELUCCA_LOGO_TEXT=1` drops it) | 4,635 | 0.8 % |
+| boot logo (RLE; `FELUCCA_LOGO_TEXT=1` drops it — and the kid build does, see below) | 4,635 | 0.8 % |
 | tables (`felucca_tables.h`) | 4,356 | 0.7 % |
 | parameter icons (86 at 1 bpp) | 3,096 | 0.5 % |
 | **total constant data** | **~314,000** | **~54 %** |
 
 So roughly **267 KB is code + strings**.
+
+**The kid build's budget is 14,379 B.** 9,744 B free plus the 4,635 B wordmark: the kid splash replaces
+`sloop_splash()` with a text card, so the RLE array is dropped at preprocessing time with
+`FELUCCA_LOGO_TEXT=1` (`tools/build.py:343`). Not calling `sloop_logo_draw()` is *not* enough — the
+build has `-ffunction-sections` but no `-fdata-sections`, so an unreferenced `static const` array stays
+in `.rodata`. Expected kid image: **567,185 B**.
 
 **This table is where the plan went wrong, and §2b is the correction.** None of it is wrong as
 measurement — the sample bank really is 48.7 % of the slot — but it is not the same as knowing the
