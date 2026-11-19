@@ -270,8 +270,19 @@ the next boot will restore stale kits.
 ## 8. Parent mode, volume, exits
 
 - **Combo:** `HOME` held 3 s while in the sandbox → the existing menu code (`ui_menu.c`) with a
-  reduced item list: `UNLOCK ALL`, `RESET PROGRESS`, `VOLUME LIMIT`, `BACKUP REMINDER`.
-  Reuse `ui.menu`/`ui.menu_sel` rather than a new screen; `menu_input()` already handles knobs.
+  reduced item list. Reuse `ui.menu`/`ui.menu_sel` rather than a new screen; `menu_input()` already
+  handles knobs and its items are **all settings** — there is no project object in it, so it cannot
+  wipe her work (finding 37).
+
+  **Keep:** COLOR, ZOOM, KNOB ACCEL, LIGHTS, KEYS, NOTES, SPEAKER LOWCUT, STEP ADVANCE, DRUM PREVIEW,
+  FILTER RESO, MIDI LEARN CLEAR, ABOUT. Plus the kid-only rows: `UNLOCK ALL`, `RESET PROGRESS`,
+  `VOLUME LIMIT`, `BACKUP REMINDER`.
+
+  **Hide:** `HARDWARE CALIBRATION` (`MI_PANEL`) — one OCT+ press rewrites the button map, and a
+  mis-taught map also takes away the parent's UPDATE MODE combo, which reads `panel.btn[]`; only the
+  raw power-on pair still works (`main.c:246`). Also `2ND CORE` (`MI_CPU1`, half the render headroom),
+  `USB AUDIO` (`MI_USB`) and `USB RATE` (`MI_RATE`) — the sound path, not a kid's business. Hiding is
+  a filter in the row iterator, not a table edit: `mi_sec()`/`mi_row()` index `MS_FIRST[]` directly.
 - **Not a PIN.** A 10-year-old will find it in a week. The design is guidance, not security.
 - **Volume ceiling:** `main.c:283` sets `song.master_q12 = (k10 * k10) >> 8` (0..4092) from the analog
   MASTER pot. Clamp the *result*, not `k10`, to ~70 %: lines 278–282 let the LIVE page's encoder
@@ -328,9 +339,13 @@ Total new code ≈ 1,000 lines + 3 KB of strings. In the measured terms of this 
 - **Identity:** `FELUCCA_ID "FM-1_910"`, version string `SLOOP JR 1.0`, package name
   `sloop-jr-1.0.fwsc`, so it can never be confused with stock in an installer list.
 - **Paying for it (measured 20 Nov — nothing needs cutting):** stock 2.8.5 uses 571,820 B of the
-  581,564 B slot, so there are **9,744 B free**, and the bitmap splash is still in the image, so `FELUCCA_LOGO_TEXT=1`
-  adds 4,635 B more: **14.4 KB against an 8–12 KB estimate.** If the kid build overruns, go
-  text-logo first, then cut the editor's LIVE/FM6/DSYN pages (§ plan §8). **Do not cut sample sets** —
+  581,564 B slot, so there are **9,744 B free**, and the bitmap wordmark is 4,635 B of that image
+  (`splash.c:36-50`). The kid build replaces the splash with a text card, so **build it with
+  `FELUCCA_LOGO_TEXT=1` from the start and the budget is 14,379 B** — not an emergency fallback but the
+  working number. Note that *not calling* `sloop_logo_draw()` reclaims nothing: `tools/build.py:40`
+  passes `-ffunction-sections` without `-fdata-sections`, so the unreferenced array stays in `.rodata`;
+  the flag drops it at preprocessing time (`build.py:343` says the same: "4.6 KB less"). If the kid
+  build still overruns, cut the editor's LIVE/FM6/DSYN pages (§ plan §8). **Do not cut sample sets** —
   it buys room we do not need, renumbers the SAMPLE presets, and forces a kid-only `tests/golden.txt`.
 - **Check the size without a toolchain:** `python3 tools/decode_fwsc.py PKG.fwsc` prints the image and
   the free bytes for any package (`docs/KID-MODE-MEASUREMENTS.md` §2b), and a stock build must print
