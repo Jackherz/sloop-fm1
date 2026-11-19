@@ -5,6 +5,7 @@
  * them. Locked means unreachable, never deleted, never rewritten: a project
  * restore (proj_apply) is deliberately not gated. */
 #if FELUCCA_KID
+#include "kid_missions.h"   /* kid_seed_t, kid_mission_t, KID_SEEDS[], KID_MISSIONS[] (generated) */
 /* the level each page unlocks at (PAGES[] index; 0 = never in kid mode: TOOLS,
  * whose NEW LOOP would wipe her song with no confirmation, finding 7) */
 static const uint8_t KID_PAGE_LVL[] = {
@@ -34,6 +35,17 @@ static const uint8_t KID_ENG_LVL[] = {
 };
 static kid_rec_t kid_ram;   /* the progress record as it stands in RAM (level 0 = none) */
 uint8_t kid_dirty;          /* changed since the settings were written (project.c) */
+static uint32_t kid_parked;     /* missions parked with SKIP this session (a bit each) */
+static uint8_t  kid_rung;       /* the ladder's rung for the mission on the card */
+static uint8_t  kid_demo_lane;  /* a demonstration: the lane and the steps it lent her */
+static uint64_t kid_demo_mask;  /* (the steps it added: NSTEP is 64) */
+static uint32_t kid_demo_t;     /* when it started (ms, 0 = not running) */
+static uint32_t kid_pass_t;     /* when the check first read true (a settle before the reward) */
+static uint8_t  kid_safety;     /* the one-shot "see? gone." */
+static uint8_t  kid_req;        /* 1: PLAY asked for the mission, 2: HOME asked to leave it */
+static char     kid_say2[24];   /* the second message (the level that opened) */
+static uint8_t  kid_safety_m;   /* (the safety lesson is waiting for the header) */
+
 _Static_assert(sizeof(kid_rec_t) == 24u, "the progress record is 24 B (of 112 free)");
 uint8_t kid_on(void) { return 1; }
 uint8_t kid_level(void)
@@ -52,6 +64,11 @@ void kid_reset(void)
     memset(&kid_ram, 0, sizeof kid_ram);
     kid_dirty = 1;
     settings_later = 1;
+    kid_parked = 0;                 /* S6: a fresh record offers the first mission again */
+    kid_rung = 0;
+    kid_safety = 0;
+    kid_safety_m = 0;
+    kid_say2[0] = 0;
 }
 void kid_fill(kid_rec_t *r)
 {
@@ -159,10 +176,6 @@ static const char *const KID_LVL_NAME[10] = {   /* docs/KID-MODE-PLAN.md §4 */
     "THE DRUMMER", "THE GROOVE", "THE BASS PLAYER", "THE CHORD PLAYER", "THE SOUND SHAPER",
     "THE SPACE MAKER", "THE MELODY", "THE STRINGS", "THE COMPOSER", "THE INVENTOR",
 };
-static const char *const KID_LVL_HINT[10] = {   /* SEQ on the clubhouse (the S5 ladder replaces these) */
-    "WHITE KEYS = DRUMS", "SNARE 2 AND 4", "BASS: ROOT NOTES", "CHORDS: FOLLOW BASS", "KNOB 1: FILTER",
-    "DELAY + REVERB", "LEAD OVER CHORDS", "PLUCK + BOW STRINGS", "SECTIONS A-D", "FM6 + YOUR SAMPLES",
-};
 static const char *const KID_TILE[4] = {"DRUMS", "BASS", "KEYS", "LEAD"};   /* the band row (the map) */
 static const uint8_t KID_TILE_TRK[4] = {TRK_DRUM, 0, 1, 2};                /* tile -> track index */
 
@@ -189,9 +202,17 @@ void kid_enter(void)
 
 void kid_draw(void)
 {
-    uint32_t sig = kid_level() * 131u + (ui.msg_t ? str_hash(7u, ui.msg) : 0u) +
-                   (uint32_t)song.playing * 17u + (uint32_t)song.rec * 257u;
-    uint32_t i, lvl = kid_level();
+    uint8_t id = kid_mission_active ? kid_ms_id : kid_mission_current();   /* what PLAY would start */
+    uint32_t lvl = kid_level(), i, dsum = 0;
+    uint32_t sig = lvl * 131u + (ui.msg_t ? str_hash(7u, ui.msg) : 0u) +
+                   (uint32_t)song.playing * 17u + (uint32_t)song.rec * 257u +
+                   (uint32_t)(id & 0xFF) * 29u + (uint32_t)kid_rung * 53u +
+                   (uint32_t)kid_mission_active * 97u;
+    for (i = 0; i < 3u; i++) {                     /* the level's three, done or not */
+        uint8_t m = kid_mission_of_level((uint8_t)lvl, (uint8_t)i);
+        dsum = dsum * 3u + (m < KID_NMISSION ? kid_mission_done(m) : 0u);
+    }
+    sig += dsum * 11u;
     if (!ui.force && sig == ui.kid_sig)
         return;               /* finding 30: redraw on state change only */
     ui.kid_sig = sig;
@@ -202,32 +223,68 @@ void kid_draw(void)
         cv_text(4, 1, &FONT_S, ui.msg, C_HI);                         /* finding 32: never hide a message */
     } else {
         char b[16];
-        str_cpy(b, "LEVEL ", sizeof b);
+        str_cpy(b, "LEVEL ", sizeof b);                               /* (the card names the mission) */
         fmt_int(b + 6, (int32_t)lvl);
         cv_text(4, 1, &FONT_S, b, C_HI);
         cv_text(236 - text_w(&FONT_S, "SLOOP JR"), 1, &FONT_S, "SLOOP JR", C_GRAY);
     }
     cv_blit(0, Y_HEAD);
-    cv_begin(240, H_GRAPH, C_BLACK);                                  /* band 2: the body */
-    cv_text(4, 4, &FONT_S, KID_LVL_NAME[lvl - 1u], C_WHITE);
-    for (i = 0; i < 4u; i++) {                                        /* the tiles: lit = unlocked */
+    cv_begin(240, H_GRAPH, C_BLACK);                                  /* band 2: the card */
+    if (id >= KID_NMISSION) {                                         /* every mission done */
+        cv_text(4, 10, &FONT_L, "ALL DONE", C_WHITE);
+        cv_text(4, 50, &FONT_S, "YOU BUILT A BAND", C_HI);
+    } else {
+        char b[16];
+        str_cpy(b, "MISSION ", sizeof b);                             /* (which one, small) */
+        fmt_int(b + 8, (int32_t)id + 1);
+        cv_text(4, 0, &FONT_S, b, C_GRAY);
+        cv_text(236 - text_w(&FONT_S, KID_LVL_NAME[lvl - 1u]), 0, &FONT_S, KID_LVL_NAME[lvl - 1u], C_GRAY);
+        cv_text(4, 17, &FONT_L, kid_mission_title(id), C_WHITE);      /* what she will make */
+        cv_text(4, 50, &FONT_S, kid_mission_line(id, 0), C_HI);       /* what to do */
+        /* the third line is hers to ask for (the ladder's first rung); until then, the second cue */
+        if (kid_rung && kid_mission_hint(id)[0])
+            cv_text(4, 66, &FONT_S, kid_mission_hint(id), C_WHITE);
+        else if (kid_mission_line(id, 1)[0] && kid_mission_line(id, 1)[0] != '-')
+            cv_text(4, 66, &FONT_S, kid_mission_line(id, 1), C_GRAY);
+    }
+    for (i = 0; i < 4u; i++) {                                        /* the band row: lit = hers */
         int32_t x = 4 + (int32_t)i * 59;
         uint16_t col = TE_COL[KID_TILE_TRK[i] & 3u];
         int on = kid_track_ok(KID_TILE_TRK[i]);
-        cv_rect(x, 30, 55, 26, on ? col : C_LINE);
-        cv_text(x + 4, 36, &FONT_S, KID_TILE[i], on ? C_WHITE : C_DIM);
+        cv_rect(x, 84, 55, 22, on ? col : C_LINE);
+        cv_text(x + 4, 88, &FONT_S, KID_TILE[i], on ? C_WHITE : C_DIM);
     }
-    for (i = 0; i < 10u; i++) {                                       /* the level dots: the current one lit */
-        int32_t x = 12 + (int32_t)i * 23;
-        cv_rect(x, 68, 14, 14, i + 1u == lvl ? C_HI : i + 1u < lvl ? C_WHITE : C_LINE);
+    if (id < KID_NMISSION) {                                          /* the level's three dots */
+        uint8_t lv = KID_MISSIONS[id].level;
+        for (i = 0; i < 3u; i++) {
+            uint8_t m = kid_mission_of_level(lv, (uint8_t)i);
+            int32_t x = 4 + (int32_t)i * 20;
+            uint8_t d = m < KID_NMISSION ? kid_mission_done(m) : 0u;
+            if (d == 2u) {                                            /* done: filled */
+                cv_rect(x, 108, 12, 12, C_WHITE);
+            } else {                                                  /* open (or up): a ring */
+                uint16_t c = m == id ? C_HI : C_LINE;
+                cv_rect(x, 108, 12, 12, c);
+                cv_rect(x + 2, 110, 8, 8, C_BLACK);
+            }
+        }
+        for (i = 0; i < 10u; i++) {                                   /* the levels, small */
+            int32_t x = 76 + (int32_t)i * 15;
+            cv_rect(x, 110, 8, 8, i + 1u == lvl ? C_HI : i + 1u < lvl ? C_WHITE : C_LINE);
+        }
     }
-    cv_text(4, 92, &FONT_S, KID_LVL_HINT[lvl - 1u], C_GRAY);
     cv_blit(0, Y_GRAPH);
     lcd_fill(0, Y_FOOT, 240, 240 - Y_FOOT, C_BLACK);                  /* band 3: the footer */
     lcd_fill(0, Y_FOOT, 240, 1, C_LINE);
     cv_begin(240, 240 - Y_FOOT, C_BLACK);
-    cv_text(4, 6, &FONT_S, "SEQ: HELP", C_GRAY);
-    cv_text(236 - text_w(&FONT_S, "HOME: FREE PLAY"), 6, &FONT_S, "HOME: FREE PLAY", C_GRAY);
+    if (kid_mission_active) {
+        cv_text(4, 6, &FONT_S, "HOME: DONE", C_GRAY);
+        cv_text(236 - text_w(&FONT_S, "PLAY: STOP"), 6, &FONT_S, "PLAY: STOP", C_GRAY);
+    } else {
+        cv_text(4, 6, &FONT_S, "SEQ: HELP", C_GRAY);
+        cv_text(236 - text_w(&FONT_S, "PLAY: GO"), 6, &FONT_S, "PLAY: GO", C_GRAY);
+        cv_text(4, 18, &FONT_S, "HOME: FREE PLAY", C_DIM);
+    }
     cv_blit(0, Y_FOOT);
 }
 
@@ -267,8 +324,8 @@ int kid_input(uint32_t pressed, uint32_t notes, uint32_t home)
 
     if (kid_on_screen()) {
         uint32_t home_bit = 1u << panel.btn[B_HOME];
-        if (pressed & (1u << panel.btn[B_SEQ])) {          /* SEQ: the hint */
-            ui_message(KID_LVL_HINT[kid_level() - 1u]);
+        if (pressed & (1u << panel.btn[B_SEQ])) {          /* SEQ: the ladder's next rung */
+            kid_mission_hint_next();                       /* hint -> listen -> do it for her -> park */
             enc_drop();
             return 1;
         }
@@ -277,11 +334,15 @@ int kid_input(uint32_t pressed, uint32_t notes, uint32_t home)
             enc_drop();
             return 1;
         }
-        if (home == BT_TAP) {                              /* HOME tap: the sandbox (free play) */
-            ui.page = (uint8_t)page_first(FAM_TRK);
-            ui.fam_last[FAM_TRK] = ui.page;
-            ui.home = 0;
-            page_entered();
+        if (home == BT_TAP) {                              /* HOME tap: her song back, or the sandbox */
+            if (kid_mission_active) {
+                kid_req = 2;                               /* (the clock waits for the transport) */
+            } else {
+                ui.page = (uint8_t)page_first(FAM_TRK);
+                ui.fam_last[FAM_TRK] = ui.page;
+                ui.home = 0;
+                page_entered();
+            }
             enc_drop();
             return 1;
         }
@@ -290,8 +351,14 @@ int kid_input(uint32_t pressed, uint32_t notes, uint32_t home)
             enc_drop();
             return 1;
         }
-        if (pressed & play_rec)                            /* PLAY / REC: as stock */
-            return 0;
+        if (pressed & play_rec) {
+            if ((pressed & (1u << panel.btn[B_PLAY])) && !kid_mission_active) {
+                kid_req = 1;                               /* PLAY: the card's mission (the clock starts it) */
+                enc_drop();
+                return 1;
+            }
+            return 0;                                      /* a mission is up: PLAY / REC, as stock */
+        }
         enc_drop();   /* knobs and keys do nothing here (and must not jump on exit) */
         return 1;
     }
@@ -358,21 +425,31 @@ int kid_mission_leave(void)
  * (decision 3). A witness is a mask over state that already exists, and a check is a
  * comparison over those masks: no audio analysis, no recording buffer, no timers
  * (the curriculum's §4). */
-#include "kid_missions.h"       /* kid_seed_t, kid_mission_t, KID_SEEDS[], KID_MISSIONS[] */
 
 typedef struct {                /* the witnesses: what she did since the mission started */
     uint32_t keys;              /* the note keys pressed (as the panel reports them: one bit a key) */
     uint32_t pmask[3];          /* P_* moved while the transport ran (P_COUNT <= 96) */
-    uint32_t gmask;             /* G_* moved while the transport ran */
+    uint64_t gmask;             /* G_* moved while the transport ran (G_COUNT <= 64) */
     uint16_t lmask;             /* LY_* layers used */
     uint16_t bar_u;             /* 1/16 bar of play, for KCHK_BARS */
     uint8_t bars, presets, saves, undone, samples;
     uint32_t last_ms;
 } kid_wit_t;
 static kid_wit_t kid_wit;       /* (all zero: no witness until a mission starts) */
+
 uint8_t kid_ms_id = 0xFF;       /* the mission up, 0..29 */
 
 static uint8_t kid_bits(uint32_t m)     /* how many bits are set */
+{
+    uint8_t n = 0;
+    while (m) {
+        n = (uint8_t)(n + (m & 1u));
+        m >>= 1;
+    }
+    return n;
+}
+
+static uint8_t kid_bits64(uint64_t m)   /* (the globals: G_COUNT can pass 32) */
 {
     uint8_t n = 0;
     while (m) {
@@ -389,8 +466,8 @@ void kid_wit_param(uint32_t id)         /* ui_input.c edit_param: a knob moved a
     if (!kid_wit_zero() || !song.playing)
         return;                         /* (a mission's check is about playing: the curriculum) */
     if (id & 0x80u) {
-        if ((id & 0x7Fu) < G_COUNT)
-            kid_wit.gmask |= 1u << (id & 0x7Fu);
+        if ((id & 0x7Fu) < G_COUNT && (id & 0x7Fu) < 64u)
+            kid_wit.gmask |= 1ull << (id & 0x7Fu);
         return;
     }
     if (id < P_COUNT && id < 96u)
@@ -401,12 +478,24 @@ void kid_wit_param(uint32_t id)         /* ui_input.c edit_param: a knob moved a
 void kid_wit_preset(void) { if (kid_wit_zero()) kid_wit.presets++; }
 void kid_wit_layer(uint32_t l) { if (kid_wit_zero() && l < 16u) kid_wit.lmask |= (uint16_t)(1u << l); }
 void kid_wit_saved(void) { if (kid_wit_zero()) kid_wit.saves++; }
-void kid_wit_undone(void) { if (kid_wit_zero()) kid_wit.undone = 1; }
+void kid_wit_undone(void)
+{
+    if (kid_wit_zero())
+        kid_wit.undone = 1;
+    if (!kid_safety) {                     /* curriculum: the "you cannot break it" lesson, once */
+        kid_safety = 1;
+        kid_safety_m = 1;
+    }
+}
 void kid_wit_sample(void) { if (kid_wit_zero()) kid_wit.samples++; }
+
+
+static void kid_clock(uint32_t now);   /* (defined with the witnesses below) */
 
 void kid_mission_tick(uint32_t notes, uint32_t ms)
 {
     uint32_t d, i, live = 0;
+    kid_clock(ms);
     if (!kid_wit_zero()) {
         kid_wit.last_ms = ms;
         return;
@@ -477,11 +566,12 @@ static uint8_t kid_chk(uint8_t kind, uint32_t a, uint32_t b)
         }
     case KCHK_BARS:   return kid_wit.bars >= a;
     case KCHK_PARAM:
-        return a & 0x80u ? (((a & 0x7Fu) < G_COUNT) && ((kid_wit.gmask >> (a & 0x7Fu)) & 1u)) != 0
+        return a & 0x80u ? (((a & 0x7Fu) < G_COUNT && (a & 0x7Fu) < 64u) &&
+                            ((kid_wit.gmask >> (a & 0x7Fu)) & 1ull)) != 0
                          : (a < 96u && ((kid_wit.pmask[a >> 5] >> (a & 31u)) & 1u)) != 0;
     case KCHK_PARAMS:
         return (uint32_t)kid_bits(kid_wit.pmask[0]) + kid_bits(kid_wit.pmask[1]) +
-               kid_bits(kid_wit.pmask[2]) + kid_bits(kid_wit.gmask) >= a;
+               kid_bits(kid_wit.pmask[2]) + kid_bits64(kid_wit.gmask) >= a;
     case KCHK_PRESET: return kid_wit.presets >= a;
     case KCHK_LAYER:  return (kid_wit.lmask >> a) & 1u;
     case KCHK_SAVED:  return kid_wit.saves >= a;
@@ -543,6 +633,7 @@ uint8_t kid_mission_finish(void)
     if (!kid_mission_pass())
         return 0;
     kid_mission_mark(kid_ms_id, 2);
+    kid_parked &= ~(1u << kid_ms_id);      /* (done is done: a parked card moves on) */
     kid_ram.sessions++;
     lvl = KID_MISSIONS[kid_ms_id].level;
     kid_level_check(lvl);
@@ -644,7 +735,14 @@ int kid_mission_end(void)
 
 /* ---- what the clubhouse and the mission screen draw ---- */
 const char *kid_mission_title(uint8_t id) { return id < KID_NMISSION ? KID_MISSIONS[id].title : ""; }
-const char *kid_mission_line(uint8_t id, uint32_t n) { return id < KID_NMISSION ? (n ? KID_MISSIONS[id].l2 : KID_MISSIONS[id].l1) : ""; }
+const char *kid_mission_line(uint8_t id, uint32_t n)
+{
+    const char *t;
+    if (id >= KID_NMISSION)
+        return "";
+    t = n ? KID_MISSIONS[id].l2 : KID_MISSIONS[id].l1;   /* ("-" in the TSV is no line) */
+    return t ? t : "";
+}
 const char *kid_mission_hint(uint8_t id) { return id < KID_NMISSION ? KID_MISSIONS[id].hint : ""; }
 uint8_t kid_mission_of_level(uint8_t level, uint8_t nth)
 {
@@ -653,5 +751,148 @@ uint8_t kid_mission_of_level(uint8_t level, uint8_t nth)
         if (KID_MISSIONS[id].level == level && !nth--)
             return (uint8_t)id;
     return 0xFF;
+}
+
+const char *kid_mission_done_line(uint8_t id) { return id < KID_NMISSION ? KID_MISSIONS[id].done : ""; }
+
+/* ---- S6: the clubhouse plays it ---------------------------------------- */
+/* Her card, then the ladder (curriculum §7): SEQ shows the hint, SEQ again plays the step while
+ * she listens, SEQ again offers to park it. Nothing is marked failed and nothing is lost (a
+ * parked mission comes back at the next power-on). The reward is informational and brief
+ * (plan §5): the header names what she made, the band row lights up, the level's dots fill in.
+ * No score, no streak, no "well done" for pressing a button. */
+
+uint8_t kid_mission_current(void)
+{
+    uint32_t id;
+    for (id = 0; id < KID_NMISSION; id++)        /* a parked one is offered first: it stays open */
+        if (KID_MISSIONS[id].level <= kid_level() && ((kid_parked >> id) & 1u) &&
+            kid_mission_done((uint8_t)id) != 2u)
+            return (uint8_t)id;
+    for (id = 0; id < KID_NMISSION; id++)
+        if (KID_MISSIONS[id].level <= kid_level() && kid_mission_done((uint8_t)id) != 2u)
+            return (uint8_t)id;
+    return 0xFF;
+}
+void kid_mission_skip(void) { kid_parked |= 1u << kid_ms_id; }
+uint8_t kid_mission_hint_rung(void) { return kid_rung; }
+uint8_t kid_mission_demo(void) { return kid_demo_t != 0; }
+
+void kid_mission_hint_next(void)     /* SEQ: the next rung (curriculum §7) */
+{
+    uint8_t id = kid_ms_id < KID_NMISSION ? kid_ms_id : kid_mission_current();
+    if (id >= KID_NMISSION)
+        return;
+    if (kid_rung < 4u)
+        kid_rung++;
+    ui.force = 1;
+    if (kid_rung == 2u) {                  /* hear it again: and for a drum mission, the step itself */
+        if (KID_MISSIONS[id].check == KCHK_LANE && kid_ms_id == id &&
+            KID_MISSIONS[id].c0 < DRUM_LANES) {
+            uint32_t i, lane = KID_MISSIONS[id].c0;
+            for (i = 0; i < 16u; i++)          /* (the check's mask is 16 steps wide) */
+                if (((KID_MISSIONS[id].c1 >> i) & 1u) &&
+                    !((TDRUM->dstep[i].on[lane >> 3] >> (lane & 7u)) & 1u)) {
+                    TDRUM->dstep[i].on[lane >> 3] |= (uint8_t)(1u << (lane & 7u));
+                    kid_demo_mask |= 1ull << i;      /* (only the steps it added: hers stay) */
+                }
+            kid_demo_lane = (uint8_t)lane;
+            kid_demo_t = fm1_ms ? fm1_ms : 1u;
+        }
+        transport_req = 1;                 /* LISTEN: a demonstration, not a skip */
+        ui_message("LISTEN");
+    } else if (kid_rung == 3u) {
+        ui_message("TAP SEQ: SKIP");
+    } else if (kid_rung >= 4u) {
+        kid_mission_skip();                /* parked, not failed: it comes back at power-on */
+        kid_rung = 0;
+        if (kid_ms_id < KID_NMISSION)
+            kid_req = 2;                   /* leave it (her song back) and offer the next */
+        ui_message("SKIPPED");
+    }
+}
+
+/* the demonstration takes its loan back after a bar or two */
+static void kid_demo_tick(uint32_t now)
+{
+    uint32_t i;
+    if (!kid_demo_t || now - kid_demo_t < 2000u)
+        return;
+    kid_demo_t = 0;
+    for (i = 0; i < NSTEP; i++)
+        if ((kid_demo_mask >> i) & 1u)
+            TDRUM->dstep[i].on[kid_demo_lane >> 3] &= (uint8_t)~(1u << (kid_demo_lane & 7u));
+    kid_demo_mask = 0;
+    transport_req = 2;
+    ui.force = 1;
+}
+
+/* once a frame: what PLAY and HOME asked for, the demonstration's loan, the completion, and the
+ * messages that must wait for the header (finding 28/32: ui.msg is 24 B and kid screens show it) */
+static void kid_clock(uint32_t now)
+{
+    uint8_t id, before;
+    int r;
+    kid_demo_tick(now);
+    if (kid_safety_m && !ui.msg_t) {
+        kid_safety_m = 0;
+        ui_message("SEE? GONE.");
+    }
+    if (kid_say2[0] && !ui.msg_t) {
+        ui_message(kid_say2);
+        kid_say2[0] = 0;
+    }
+    if (kid_req == 1u) {                       /* PLAY: start (or resume) the mission on the card */
+        id = kid_mission_current();
+        if (id >= KID_NMISSION) {
+            kid_req = 0;
+        } else {
+            r = kid_mission_start(id);
+            if (r) {
+                kid_req = 0;
+                kid_rung = 0;
+                if (r == 1)
+                    transport_req = 1;         /* so she hears it straight away */
+                else
+                    ui_message("TRY AGAIN");
+                ui.force = 1;
+            }                                  /* (0: still stopping: next frame) */
+        }
+    } else if (kid_req == 2u) {                /* HOME: back to the clubhouse, her song back */
+        r = kid_mission_end();
+        if (r) {
+            kid_req = 0;
+            kid_rung = 0;
+            ui.force = 1;
+        }
+    }
+    if (kid_ms_id >= KID_NMISSION || kid_demo_t) {   /* (a loan is not her work: it cannot pass) */
+        kid_pass_t = 0;
+        return;
+    }
+    if (kid_mission_done(kid_ms_id) == 2u || !kid_mission_pass()) {
+        kid_pass_t = 0;
+        return;
+    }
+    if (!kid_pass_t) {
+        kid_pass_t = now ? now : 1u;           /* (a moment to hear it land) */
+        return;
+    }
+    if (now - kid_pass_t < 600u)
+        return;
+    kid_pass_t = 0;
+    before = kid_level();
+    if (!kid_mission_finish())
+        return;
+    ui_message(kid_mission_done_line(kid_ms_id));   /* what she made, not "well done" */
+    if (kid_level() != before) {                    /* the door that opened, said next */
+        uint32_t n = 6;
+        str_cpy(kid_say2, "LEVEL ", sizeof kid_say2);
+        fmt_int(kid_say2 + 6, (int32_t)kid_level());
+        while (kid_say2[n])
+            n++;
+        str_cpy(kid_say2 + n, " IS OPEN", sizeof kid_say2 - n);
+    }
+    ui.force = 1;
 }
 #endif

@@ -80,10 +80,16 @@ int kid_mission_end(void);                      /* leave a mission (her song bac
 uint8_t kid_mission_pass(void);                 /* 1: the checks are true now */
 uint8_t kid_mission_finish(void);               /* pass + record + badge the level when its missions are done */
 void kid_mission_tick(uint32_t notes, uint32_t ms);   /* witnesses, once a UI frame */
-uint8_t kid_mission_done(uint8_t id);           /* 1: done, 2: started and not finished */
+uint8_t kid_mission_done(uint8_t id);           /* 0 untouched, 1 started, 2 done */
 const char *kid_mission_title(uint8_t id), *kid_mission_line(uint8_t id, uint32_t n),
-           *kid_mission_hint(uint8_t id);
+           *kid_mission_hint(uint8_t id), *kid_mission_done_line(uint8_t id);
 uint8_t kid_mission_of_level(uint8_t level, uint8_t nth);   /* 0..29, 0xFF = none */
+/* S6: the clubhouse plays it */
+uint8_t kid_mission_current(void);              /* the mission to offer (0..29, 0xFF = all done) */
+void kid_mission_skip(void);                    /* park it for now: the others stay open */
+uint8_t kid_mission_hint_rung(void);            /* 0 the card, 1 the hint, 2 a demo, 3 skip */
+void kid_mission_hint_next(void);               /* SEQ: the next rung of the ladder */
+uint8_t kid_mission_demo(void);                 /* 1: a demonstration is running (listen) */
 /* the witnesses the stock paths feed (they do nothing unless a mission is up) */
 void kid_wit_param(uint32_t id);
 void kid_wit_preset(void);

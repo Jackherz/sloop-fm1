@@ -208,7 +208,7 @@ static void satisfy(uint8_t kind, uint32_t a, uint32_t b)
     switch (kind) {
     case KCHK_HONOUR: return;
     case KCHK_KEYS:   keys_n(a); return;
-    case KCHK_LANE:   for (uint32_t i = 0; i < NSTEP; i++)
+    case KCHK_LANE:   for (uint32_t i = 0; i < 16u; i++)   /* (the check's mask is 16 bits) */
                           if (b >> i & 1u) TDRUM->dstep[i].on[a >> 3] |= (uint8_t)(1u << (a & 7u));
                       return;
     case KCHK_WROTE:  { track_t *t = &trk[a]; for (uint32_t i = 0; i < b; i++)
@@ -236,7 +236,7 @@ static void undo_kind(uint8_t kind, uint32_t a, uint32_t b)
     switch (kind) {
     case KCHK_HONOUR: return;                        /* (cannot be taken away) */
     case KCHK_KEYS:   kid_wit.keys = 0; return;
-    case KCHK_LANE:   for (uint32_t i = 0; i < NSTEP; i++)
+    case KCHK_LANE:   for (uint32_t i = 0; i < 16u; i++)
                           TDRUM->dstep[i].on[a >> 3] &= (uint8_t)~(1u << (a & 7u));
                       return;
     case KCHK_WROTE:  memset(trk[a].step, 0, sizeof trk[a].step); return;
@@ -252,6 +252,39 @@ static void undo_kind(uint8_t kind, uint32_t a, uint32_t b)
     case KCHK_SAMPLE: kid_wit.samples = 0; return;
     default: return;
     }
+}
+
+/* S6: one mission played from the clubhouse, as she would: PLAY, do what the card
+ * says, and the header that follows (the clubhouse input path, not the engine's) */
+static int play_one(uint8_t id, int *line_ok)
+{
+    const kid_mission_t *m = &KID_MISSIONS[id];
+    uint32_t t;
+    tap(B_PLAY);
+    for (t = 0; t < 300u && !(kid_mission_active && kid_ms_id == id); t++)
+        frame();
+    if (!(kid_mission_active && kid_ms_id == id))
+        return 0;
+    song.playing = 1;                       /* (a knob counts only while it plays) */
+    satisfy(m->check, m->c0, m->c1);
+    if (m->check2)
+        satisfy(m->check2, m->d0, m->d1);
+    song.playing = 0;
+    for (t = 0; t < 600u && kid_mission_done(id) != 2u; t++)
+        frame();
+    if (line_ok)
+        *line_ok = kid_mission_done(id) == 2u &&
+                   !strncmp(ui.msg, kid_mission_done_line(id), strlen(kid_mission_done_line(id)));
+    return kid_mission_done(id) == 2u;
+}
+/* HOME on the clubhouse: a running mission ends, her song comes back */
+static int leave_mission(void)
+{
+    uint32_t t;
+    tap(B_HOME);
+    for (t = 0; t < 300u && kid_mission_active; t++)
+        frame();
+    return !kid_mission_active && kid_on_screen();
 }
 
 int main(void)
@@ -555,31 +588,52 @@ int main(void)
         check(!strncmp(ui.msg, "HELLO", 5), "the header carries ui.msg on the clubhouse");
         ui.msg_t = 0;
     }
-    {   /* the input map on the clubhouse (driven through ui_input) */
+    {   /* the input map on the clubhouse (driven through ui_input; S6: SEQ is the ladder,
+         * PLAY starts the card's mission, HOME gives her song back) */
+        uint32_t r0;
+        kid_reset();
         kid_set_level(1);
+        settle();
         kid_enter();
         frames(2);
-        /* SEQ: the hint (not a refusal) */
+        /* SEQ: the ladder's first rung: the hint appears on the card, not as a message */
+        r0 = kid_mission_hint_rung();
         tap(B_SEQ);
-        check(ui.msg_t && !msg_is_refusal(), "SEQ on the clubhouse is the hint");
-        ui.msg_t = 0;
+        check(kid_mission_hint_rung() == r0 + 1u || r0 >= 3u, "SEQ on the clubhouse asks for the hint");
+        check(!ui.msg_t, "the hint is on the card, not in the header");
+        ui.force = 1;
+        ui_draw();                                   /* (the card draws with the hint) */
         /* EDIT: undo (one button) */
         tap(B_EDIT);
         check(ui.msg_t && (!strncmp(ui.msg, "UNDO", 4) || !strncmp(ui.msg, "NOTHING", 7)),
               "EDIT on the clubhouse is undo");
         ui.msg_t = 0;
+        /* the safety lesson (curriculum §6): the first undo says the change is not lost,
+         * once, and only when the header is free */
+        ui.msg_t = 0;
+        kid_wit_undone();
+        frames(2);
+        check(!strncmp(ui.msg, "SEE?", 4), "the first undo says the change is not lost");
+        ui.msg_t = 0;
+        ui.msg[0] = 0;
+        kid_wit_undone();
+        frames(2);
+        check(ui.msg[0] == 0, "and the lesson is said once");
         /* another button: NOT YET (a mash opens nothing) */
         tap(B_ENV);
         check(msg_is_refusal(), "another button on the clubhouse is NOT YET");
         check(kid_on_screen(), "a mash cannot leave the clubhouse");
         ui.msg_t = 0;
-        /* PLAY: falls through to stock (the transport toggles) */
-        {
-            int was = song.playing;
-            tap(B_PLAY);
-            check(song.playing != was || transport_req, "PLAY on the clubhouse is stock");
-        }
-        /* HOME tap: the sandbox (free play) */
+        /* PLAY: starts the mission on the card (and the transport with it) */
+        tap(B_PLAY);
+        for (i = 0; i < 300u && !kid_mission_active; i++) frame();
+        check(kid_mission_active && kid_ms_id == 0, "PLAY on the clubhouse starts the mission on the card");
+        check(song.playing || transport_req, "and the transport plays it");
+        /* HOME tap: a running mission gives her song back, and she stays on the clubhouse */
+        tap(B_HOME);
+        for (i = 0; i < 300u && kid_mission_active; i++) frame();
+        check(!kid_mission_active && kid_on_screen(), "HOME on a running mission ends it, on the clubhouse");
+        /* HOME tap with nothing up: the sandbox (free play) */
         tap(B_HOME);
         check(!kid_on_screen(), "HOME tap on the clubhouse goes to the sandbox");
         check(PAGES[ui.page].fam == FAM_TRK, "the sandbox is the TRACKS room");
@@ -879,6 +933,129 @@ int main(void)
         }
         check(kid_mission_of_level(1, 0) == 0 && kid_mission_of_level(2, 0) == 3 &&
               kid_mission_of_level(1, 3) == 0xFF, "the first mission of a level (and none past the last)");
+    }
+
+    /* 6: levels 1-3 played from the clubhouse (S6). The card, the tiles and the dots are the
+     * whole manual: PLAY starts the card's mission, the check finishes it, the header names
+     * what she made, the third mission of a level opens the next one. Then the ladder
+     * (hint -> listen, with the step played for her -> park) and the parked mission's return. */
+    {   uint32_t id, t, n, ok_card = 0, ok_play = 0, ok_done = 0, ok_line = 0, ok_leave = 0;
+        uint32_t started = 0, ladder = 0, loan = 0, returned = 0, parked = 0, open2 = 0;
+
+        kid_reset();
+        kid_set_level(1);
+        settle();
+        kid_enter();
+        frames(2);
+
+        /* level 1: missions 1, 2, 3 */
+        for (id = 0; id < 3u; id++) {
+            int line = 0;
+            ok_card += kid_mission_current() == id;
+            ok_play += play_one((uint8_t)id, &line);
+            ok_line += line;
+            ok_done += kid_mission_done((uint8_t)id) == 2u;
+            if (id == 2u) {                        /* the third one opens the level... */
+                open2 += kid_level() == 2u;
+                ui.msg_t = 0;                      /* ...and says so next */
+                frames(2);
+                open2 += !strncmp(ui.msg, "LEVEL 2 IS OPEN", 15);
+                ui.msg_t = 0;
+            }
+            ok_leave += leave_mission();
+        }
+        check(ok_card == 3 && ok_play == 3 && ok_done == 3 && ok_leave == 3,
+              "test 6: level 1 played from the clubhouse (card, PLAY, done, HOME)");
+        check(ok_line == 3, "test 6: each header names what she made");
+        check(open2 == 2, "test 6: the third mission opens level 2, and it says so");
+
+        /* the ladder, on mission 4 (BACKBEAT: the hat lane, steps 5 and 13) */
+        tap(B_PLAY);
+        for (t = 0; t < 300u && !(kid_mission_active && kid_ms_id == 3); t++)
+            frame();
+        started += kid_mission_active && kid_ms_id == 3;
+        check(started == 1, "test 6: the next card's mission starts (mission 4)");
+        n = KID_MISSIONS[3].c0;                    /* the lane the demo borrows */
+        ladder += kid_mission_hint_rung() == 0;
+        ui.force = 1;                              /* the card, for the eye (S6 layout) */
+        ui_draw();
+        ppm("kid-card");
+        tap(B_SEQ);                                /* rung 1: the hint, on the card */
+        ladder += kid_mission_hint_rung() == 1u && !ui.msg_t;
+        ui.force = 1;                              /* ...and with the hint asked for */
+        ui_draw();
+        ppm("kid-card-hint");
+        tap(B_SEQ);                                /* rung 2: listen, and the step played */
+        ladder += kid_mission_hint_rung() == 2u && !strncmp(ui.msg, "LISTEN", 6);
+        loan += ((TDRUM->dstep[4].on[n >> 3] >> (n & 7u)) & 1u) == 1u &&
+                ((TDRUM->dstep[12].on[n >> 3] >> (n & 7u)) & 1u) == 1u;
+        for (t = 0; t < 400u && kid_mission_demo(); t++)
+            frame();                               /* (a bar or two, then the loan is taken back) */
+        returned += !kid_mission_demo() &&
+                    ((TDRUM->dstep[4].on[n >> 3] >> (n & 7u)) & 1u) == 0u &&
+                    kid_mission_done(3) != 2u;     /* (a loan is not her work: no reward) */
+        check(ladder == 3 && loan == 1 && returned == 1,
+              "test 6: the ladder's first two rungs, a borrowed step, and it taken back");
+        {
+            int line = 0;
+            const kid_mission_t *m = &KID_MISSIONS[3];
+            song.playing = 1;
+            satisfy(m->check, m->c0, m->c1);       /* now she does it herself */
+            song.playing = 0;
+            for (t = 0; t < 600u && kid_mission_done(3) != 2u; t++)
+                frame();
+            line = kid_mission_done(3) == 2u &&
+                   !strncmp(ui.msg, kid_mission_done_line(3), strlen(kid_mission_done_line(3)));
+            check(line, "test 6: and then it completes, with its line");
+        }
+        ok_leave = leave_mission();
+
+        /* mission 5 (IN BETWEEN), played the same way */
+        {   int line = 0;
+            ok_card += kid_mission_current() == 4;
+            ok_play += play_one(4u, &line);
+            ok_line += line;
+            ok_done += kid_mission_done(4) == 2u;
+            ok_leave += leave_mission();
+        }
+
+        /* rung 4: park mission 6 and hear it offered again (nothing marks it failed) */
+        {   uint32_t r;
+            tap(B_PLAY);
+            for (t = 0; t < 300u && !(kid_mission_active && kid_ms_id == 5); t++)
+                frame();
+            r = kid_mission_active && kid_ms_id == 5;
+            for (n = 0; n < 4u; n++)               /* hint, listen, do-it-for-her, park */
+                tap(B_SEQ);
+            parked += r && kid_mission_hint_rung() == 0 &&
+                      !strncmp(ui.msg, "SKIPPED", 7) && kid_mission_current() == 5;
+            for (t = 0; t < 300u && kid_mission_active; t++)
+                frame();
+            parked += !kid_mission_active && kid_on_screen();   /* (her song back) */
+            check(parked == 2, "test 6: SEQ four times parks the mission, and it is still the card");
+        }
+
+        /* levels 2 and 3: the parked mission first, then 6 to 9 */
+        {   uint32_t c2 = 0, p2 = 0, d2 = 0, l2 = 0, v2 = 0;
+            for (id = 5; id < 9u; id++) {
+                int line = 0;
+                c2 += kid_mission_current() == id;
+                p2 += play_one((uint8_t)id, &line);
+                l2 += line;
+                d2 += kid_mission_done((uint8_t)id) == 2u;
+                if (id == 8u) {
+                    open2 += kid_level() == 4u;
+                    ui.msg_t = 0;
+                    frames(2);
+                    open2 += !strncmp(ui.msg, "LEVEL 4 IS OPEN", 15);
+                    ui.msg_t = 0;
+                }
+                v2 += leave_mission();
+            }
+            check(c2 == 4 && p2 == 4 && d2 == 4 && l2 == 4 && v2 == 4,
+                  "test 6: levels 2 and 3 played the same way (missions 5-9)");
+            check(open2 == 4, "test 6: the third mission of level 3 opens level 4");
+        }
     }
 
     printf("kid: %d failure%s\n", fails, fails == 1 ? "" : "s");

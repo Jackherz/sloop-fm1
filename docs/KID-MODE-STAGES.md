@@ -268,7 +268,7 @@ seed worked in, `autosave_resume()` as at boot) brings her song back, not the se
 | **Risk** | content size. Write the 30 missions short from the start (2 × 28 chars); the printed card is where the words go. |
 
 **As built.**
-- **The table is `docs/kid_missions.tsv`** (30 rows × 16 columns, its own header documents them) and
+- **The table is `docs/kid_missions.tsv`** (30 rows × 17 columns, its own header documents them) and
   `tools/gen_kid_missions.py` writes two things from it: `build/gen/kid_missions.h` (the strings, the
   `KID_SEEDS[]` recipes, the checks, `KID_LVL_MISSION[]`) and `build/kid_cards.md` (the printed cards —
   the long copy exists nowhere else). The generator refuses a title over 14 characters or a line over 28,
@@ -293,18 +293,63 @@ seed worked in, `autosave_resume()` as at boot) brings her song back, not the se
   mutes; every check passes at its boundary and not one step before — 98 boundary events over the table)
   and kid test 5 (a started mission resumes with its witnesses after leaving and re-entering; the null,
   honour-only mission completes on SEQ and is idempotent; level 1's three missions set the badge and open
-  level 2). 170 checks in `tests/kid_test.c`, 0 failures, also under UBSan; stock still 182 golden
-  renders, 0 changed.
+  level 2). 170 checks in `tests/kid_test.c` at this stage (184 from S6 on), 0 failures, also under
+  UBSan; stock still 182 golden renders, 0 changed.
 
 ### S6 — Levels 1–3 and the reward vocabulary  (2 days)
 
 | | |
 |---|---|
-| **Goal** | Six missions you can play, and the reward design is real, not described. |
+| **Goal** | Nine missions you can play, and the reward design is real, not described. |
 | **Work** | Missions 1–9 from the curriculum; the band row lighting up; the badge/jingle; the hint ladder (demo → do it for her → skip); the safety mission that fires on the first undo. |
 | **Exit** | You play levels 1–3 on the device twice, without reading a doc, and the third mission of each level feels earned. |
 | **Size** | ~600 B + content. |
 | **Risk** | this is where over-rewarding creeps in. The research (plan §5) says unexpected, informational praise; no streaks, no points. |
+
+**As built.**
+- **The table gained a `done` column** (`docs/kid_missions.tsv`, now 17 columns): the line the header
+  shows when the mission completes, ≤ 24 chars (`ui.msg`'s size) — "THAT'S A BACKBEAT", "EIGHT DRUMS".
+  The generator emits it fifth, after `hint`, and `kid_mission_done_line(id)` reads it. All 30 missions'
+  title / two lines / hint / done line were rewritten short and plain while the column was added (verb
+  first, one idea a line, no jargon): 1 FIRST HIT · "TAP THE WHITE KEYS" · "EACH KEY IS A DRUM" →
+  "EIGHT DRUMS"; 4 BACKBEAT · "ADD SNARE ON 2 AND 4" · hint "SNARE IS THE THIRD KEY" →
+  "THAT'S A BACKBEAT". The printed cards (`build/kid_cards.md`) carry the new column for free.
+- **The clubhouse plays it** (the S5 leftover): PLAY asks the clock for the card's mission
+  (`kid_req = 1` → `kid_mission_start(kid_mission_current())`), which retries while the transport is
+  stopping, starts the transport once it is up, and says `TRY AGAIN` if refused; HOME tap on a running
+  mission asks for `kid_mission_end()` — her song back, she stays on the clubhouse; HOME with nothing up
+  is still the sandbox. `kid_clock()` runs once a frame from `kid_mission_tick()` and services the two
+  requests, the demonstration's loan, the completion and the messages that must wait for the header.
+- **Which mission is on the card**: a *parked* one first (parking is not losing: it stays the card until
+  she does it), then the first mission at or below her level that is not done.
+- **The reward vocabulary** (curriculum §6, plan §5), exactly: the check reads true → 600 ms (so she
+  hears it land) → `kid_mission_finish()` → the header says the mission's `done` line; if a level opened,
+  that is queued as the second message (`LEVEL 2 IS OPEN`). The clubhouse's band row lights from
+  `kid_track_ok()` (the band grows), and the level's three dots fill in (filled = done, a ring = the
+  card's). No score, no streak, no counter, no badge-as-payment, no "well done" for pressing a button.
+- **The ladder** (curriculum §7), on the clubhouse, SEQ only: 0 → 1 the hint replaces the card's third
+  line (nothing to dismiss); 1 → 2 `LISTEN` — the transport starts, and for a drum-lane mission the
+  steps she is missing are lent to that lane for 2 s (only the steps that were empty), then taken back
+  by `kid_demo_tick()`; **a loan cannot pass the mission** (the check is not read while one is out), so
+  a demonstration is never credit; 2 → 3 `TAP SEQ: SKIP`; 3 → 4 `SKIPPED` — parked, and the mission is
+  left. The rung resets when a mission starts or ends.
+- **The safety lesson**: the first real undo queues `SEE? GONE.` once per progress record
+  (`kid_safety`, cleared by `kid_reset()`), and it waits for the header instead of overwriting `UNDO`.
+- **Two latent bugs fixed on the way**: the globals witness was a 32-bit mask although `G_COUNT` is past
+  32 (it is 64 now, `kid_bits64`), and two witness loops shifted a 16-bit lane mask by up to 63. The kid
+  tests are clean under `-fsanitize=undefined` apart from two pre-existing `fx.c` reports.
+- **Tests as built**: kid test 6 drives the clubhouse's own input path (not the engine's): all nine
+  missions of levels 1–3 played from the card (PLAY → the card's mission → done → HOME), every header
+  checked against its `done` line, `LEVEL 2 IS OPEN` / `LEVEL 4 IS OPEN` after the third mission of a
+  level, rungs 1 and 2 with the borrowed step and its return (and no reward for it), rung 4 parking a
+  mission that is still the card, and the parked one coming back first. Test 2's clubhouse block was
+  rewritten for the new map (SEQ is the ladder, PLAY starts, HOME ends, the first undo speaks).
+  **184 checks in `tests/kid_test.c`, 0 failures**, also under UBSan; stock still 182 golden renders,
+  0 changed; the card, its hint state and the clubhouse render to `build/host/kid-card.ppm`,
+  `kid-card-hint.ppm`, `kid-clubhouse.ppm` for the eye.
+- **Not verified**: the exit criterion is a child, twice, on hardware, without a doc. There is no
+  toolchain and no FM-1 in this sandbox, so what is proven here is that every input and every wait the
+  exit needs works from the panel's own event path — the playtest itself is S10's job.
 
 ### S7 — Levels 4–7  (2 days) · S8 — Levels 8–10 and graduation  (2 days)
 

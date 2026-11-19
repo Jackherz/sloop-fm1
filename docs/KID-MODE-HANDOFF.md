@@ -7,15 +7,19 @@ follow it.
 Christmas gift, where finishing musical missions unlocks more of the firmware.
 
 **State:** planning complete; **S0 (flag scaffolding), S1 (the three-level gate), S2 (the progress
-record), S3 (the clubhouse, input map and screen), S4 (the two rooms / the snapshot) and S5 (the
-mission engine) are built** — `firmware/src/kid.h`/`kid.c`, the `FELUCCA_KID` flag in
-`tools/build.py`, `docs/kid_missions.tsv` → `tools/gen_kid_missions.py` → `build/gen/kid_missions.h`
-+ `build/kid_cards.md`, and `tests/kid_test.c` (170 checks: levels 1..10, kid test 3 = 30 missions
-+ a power cut, kid test 4 = the 30 seeds and every check at its boundary, kid test 5 = resume and
-level-up) — with the stock suite still green (182 golden renders, 0 changed; `ui_pages`,
-`knob_walk`, `seq2`, `storage`, `project`, UBSan all pass). Nothing built for the device yet (no
-toolchain in this sandbox). Next: **S6, levels 1–3 and the reward vocabulary** (and the clubhouse
-actually starting a mission).
+record), S3 (the clubhouse, input map and screen), S4 (the two rooms / the snapshot), S5 (the
+mission engine) and S6 (levels 1–3 and the reward vocabulary) are built** — `firmware/src/kid.h`/`kid.c`,
+the `FELUCCA_KID` flag in `tools/build.py`, `docs/kid_missions.tsv` → `tools/gen_kid_missions.py` →
+`build/gen/kid_missions.h` + `build/kid_cards.md`, and `tests/kid_test.c` (184 checks: levels 1..10,
+kid test 3 = 30 missions + a power cut, kid test 4 = the 30 seeds and every check at its boundary,
+kid test 5 = resume and level-up, kid test 6 = levels 1–3 played from the clubhouse, the hint ladder
+and the parked mission) — with the stock suite still green (182 golden renders, 0 changed; `ui_pages`,
+`knob_walk`, `seq2`, `storage`, `project`, UBSan all pass). **Nine missions are now playable from the
+clubhouse**: PLAY starts the card's mission, the check completes it, the header says what she made, the
+third mission of a level opens the next one, the band row lights up, and SEQ walks the ladder (hint →
+LISTEN with the missing step lent for 2 s → `TAP SEQ: SKIP` → parked, still the card). Nothing built
+for the device yet (no toolchain in this sandbox), so the exit criterion — a child plays levels 1–3
+twice without a doc — is still a playtest question (S10). Next: **S7, levels 4–7**.
 
 ---
 
@@ -59,6 +63,10 @@ graduation target), and `tools/measure_flash.sh`, `tools/measure_code.sh`, `tool
 **Done**
 
 - Design and curriculum, fully written.
+- **S0–S6 built and green on the host**: the gate, the record, the clubhouse, the snapshot, the mission
+  engine and the nine missions of levels 1–3 with the reward vocabulary, the hint ladder and the safety
+  lesson. `build/host/kid-card.ppm`, `kid-card-hint.ppm` and `kid-clubhouse.ppm` are rendered by the
+  tests for the eye.
 - The engineering map, with every seam verified against the source.
 - Baseline verified green: 22 host tests including **182 golden renders, 0 changed**.
 - Budget measured: image is ~54 % constant data; sample bank is 283,212 B (48.7 % of the 581,564 B
@@ -144,6 +152,7 @@ graduation target), and `tools/measure_flash.sh`, `tools/measure_code.sh`, `tool
 | A child losing her work | **Built and proven on the host** (S4): 30 mission cycles and a mid-mission power cut, her song byte-identical after each (`tests/kid_test.c` kid test 3). Still unproven on hardware, and the mission engine (S5) has to keep every write behind `kid_mission_active`. |
 | Mission content too long or wrong for the screen | **Held by the generator** (S5): a title over 14 characters or a line over 28 fails the build. What is *not* proven is whether a 10-year-old reads them (G8, S12). |
 | Content written too long for a 240 px screen | Budgeted (28 chars/line at FONT_S) and pre-written to fit, but unverified on hardware. |
+| The reward is felt as a reward | **Designed and built** (S6): informational `done` line, the band row lighting, the level's dots filling, `LEVEL n IS OPEN` — no score, no streak, no badge-as-payment. Whether a 10-year-old reads them that way is S10's question, and the reason the third mission of a level has to feel *earned* rather than awarded. |
 | Playtesting slipping past mid-December | Real. Mitigation is in the plan's §13: decide the fallback on 15 Dec, not 24 Dec. The fallback (stock SLOOP + printed cards + hand-unlocking) is a good gift on its own. |
 | Upstream releases during December | Low: kid files are separate and the audio path is frozen. |
 | One development FM-1 | Open. The plan makes ordering a second unit the first action. |

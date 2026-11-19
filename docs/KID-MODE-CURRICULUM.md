@@ -247,6 +247,18 @@ future upstream update applies. Keep it for that reason.
 Nothing in the firmware should say "well done" for pressing a button. It should say what happened:
 "SNARE ON 2 AND 4 — THAT'S A BACKBEAT". Informational praise, not payment.
 
+**As built (S6)** — what the machine actually does when a mission completes, in this order:
+
+1. the check reads true, and 600 ms pass (so she hears what she made before the screen changes);
+2. the header shows the mission's own line, the `done` column of `docs/kid_missions.tsv` — "EIGHT
+   DRUMS", "THAT'S A BACKBEAT", "THE WHOLE MACHINE" — nothing about her;
+3. if the level opened, that is said next, as the second message: `LEVEL 2 IS OPEN`;
+4. the clubhouse's band row lights the player she just added (`kid_track_ok()`), and the level's three
+   dots fill in, one for each mission done.
+
+There is no score, no streak, no counter, no badge shown as payment, and no "well done" for pressing a
+button anywhere in the kid build. `3 / 10` is the only number, and it is the levels.
+
 ---
 
 ## 7. When she is stuck
@@ -262,6 +274,19 @@ A fixed ladder, no dead ends:
 5. The card in her hand has the long version, written for her, with a bad drawing.
 
 A kid who is stuck for 90 seconds has stopped learning; the ladder exists so that window never opens.
+
+**As built (S6)** — `SEQ` on the clubhouse, one rung a press, and the card always shows where she is:
+
+| rung | what she sees / hears |
+| --- | --- |
+| 1 | the `hint` line replaces the card's third line (no message to dismiss) |
+| 2 | `LISTEN`: the transport starts; for a drum mission the steps she is missing are lent to that lane for 2 s and then taken back — a demonstration, and it **cannot** complete the mission for her |
+| 3 | `TAP SEQ: SKIP` |
+| 4 | `SKIPPED`: the mission parks and she is back on her song. It is still the card (it comes first), and it is never marked failed |
+
+Steps 2 and 3 of the ladder above collapse into rung 2 on the device (the transport replays the seed
+*and* the drum step is done for her, which is the same 2 seconds); rung 1 is the hint alone. Rungs
+reset when a mission starts or ends, so the ladder never starts half-way up.
 
 ---
 
