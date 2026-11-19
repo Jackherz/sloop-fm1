@@ -46,6 +46,9 @@ UI_SMALL static void layers_init(void)
     ft_btn_mask = 1u << panel.btn[B_REC];
     ft_drop_mask = 1u << panel.btn[B_PLAY];
     ui.lock_par = P_ED_FLT;                             /* the lock parameter until a sound knob is turned */
+#if FELUCCA_KID
+    kid_apply_layers();   /* kid mode: a locked layer gets no button bit (finding 21) */
+#endif
 }
 
 UI_SMALL static uint32_t key_of_white(uint32_t w) { return key_of_lane(w & 15u); }   /* white key w -> key index */

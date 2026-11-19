@@ -136,10 +136,18 @@ UI_SMALL static void studio_open(uint32_t scope)
     uint32_t i;
     if (scope == SC_SONG && rec_wait)
         rec_wait = 0;                                   /* (an arm does not follow into the song page) */
-    for (i = 0; i < NPAGES; i++) if (PAGES[i].scope == scope) {
+    for (i = 0; i < NPAGES; i++) if (PAGES[i].scope == scope
+#if FELUCCA_KID
+        && kid_page_ok(i)
+#endif
+        ) {
         ui.page = (uint8_t)i; ui.home = 0; song.seq_mode = 0; ui.force = 1;
         ui.msg_t = 0; ui.entry_open = 0; return;
     }
+#if FELUCCA_KID
+    if (kid_on() && scope == SC_SONG)
+        kid_refuse();   /* the song page is locked: SAVE on the drum grid must not open it */
+#endif
 }
 /* LIVE: REC, on any page. One record arm, on the selected track (it follows ALGORITHM). No
  * click (seq.c): playing, recording starts at once; stopped, REC arms and the first note
@@ -688,7 +696,12 @@ UI_SMALL static void drum_screen_input(uint32_t pressed, uint32_t home, uint32_t
             return;
         }
     }
-    if ((s = panel_enc(EN_PRESET))) TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
+    if ((s = panel_enc(EN_PRESET)))
+#if FELUCCA_KID
+        TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, (int32_t)kid_kit_max());
+#else
+        TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
+#endif
     for (k = 0; k < 4u; k++) if ((s = panel_enc(EN_K1 + k))) {
         ui.hot_col = (uint8_t)k;
         ui.hot_t = 40;

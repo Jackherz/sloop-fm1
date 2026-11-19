@@ -61,6 +61,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`):
 | `FELUCCA_CDC` | 1 | USB serial console |
 | `FELUCCA_UAC` | 1 | USB audio input: the master output, 44.1 kHz stereo (after Felucca 1.0) |
 | `FELUCCA_UART` | 1 | TRS MIDI IN (the 3.5 mm jack) |
+| `FELUCCA_KID` | 0 | SLOOP JR (docs/KID-MODE-*.md): the kid build's level gate; 0 = stock behaviour |
 
 ## Samples
 

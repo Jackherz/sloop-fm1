@@ -13,11 +13,15 @@
 #include "fm1_lcd_hw.h"
 #include "fm1_cpu1.h"      /* the second core (X0X): started in main.c, used by the render later */
 #include "felucca_tables.h"
+#ifndef FELUCCA_KID
+#define FELUCCA_KID 0            /* SLOOP JR (docs/KID-MODE-*.md): the kid build; 0 = stock behaviour */
+#endif
 
 #include "libc.c"
 #include "lcd.c"
 #include "gfx.c"
 #include "core.h"
+#include "kid.h"          /* SLOOP JR: the gate's declarations (definitions at the end) */
 #include "cpu1.h"           /* the second core's job API (defined in cpu1.c; the host tests have their own) */
 #include "engines.c"
 #include "drums.c"
@@ -199,4 +203,5 @@ static void ota_commit(const uint8_t *parm)
 #include "recovery.c"        /* early, polled USB updater; no synth or settings */
 #endif
 #include "splash.c"          /* SLOOP boot logo (build/gen/sloop_logo.h) */
+#include "kid.c"             /* SLOOP JR: the gate (empty unless FELUCCA_KID) */
 #include "main.c"

@@ -91,6 +91,9 @@ static struct {
     char big_l[4][8], big_v[4][10], big_u[4][8];   /* the four columns, for the big values (2.4: pages without a graph) */
     uint16_t big_c[4];
     uint32_t graph_sig, head_sig, foot_sig, frame;
+#if FELUCCA_KID
+    uint32_t kid_sig;            /* the clubhouse screen's drawn-state cache (kid.c) */
+#endif
     uint8_t graph_top;           /* the graph strip's top G_OY rows hold something */
 } ui;
 
@@ -103,9 +106,22 @@ static uint8_t layer_shown;
 UI_SMALL static uint32_t page_first(uint32_t fam)
 {
     uint32_t i;
+    for (i = 0; i < NPAGES; i++) {
+        if (PAGES[i].fam != fam)
+            continue;
+#if FELUCCA_KID
+        if (!page_shown(&PAGES[i]))
+            continue;   /* SLOOP JR: the first page of a family may be locked */
+#endif
+        return i;
+    }
+#if FELUCCA_KID
+    /* a family with no visible page at this level: the TRACKS page, which is
+     * always shown (finding 1: page_fix must settle, cur_page must stay in range) */
     for (i = 0; i < NPAGES; i++)
-        if (PAGES[i].fam == fam)
+        if (PAGES[i].fam == FAM_TRK && page_shown(&PAGES[i]))
             return i;
+#endif
     return 0;
 }
 
@@ -500,6 +516,12 @@ UI_SMALL static void note_name(char *b, uint32_t n)
 
 UI_SMALL static void open_family(uint32_t fam)
 {
+#if FELUCCA_KID
+    if (kid_on() && PAGES[page_first(fam)].fam != fam) {   /* every page of the family is locked */
+        kid_refuse();
+        return;
+    }
+#endif
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */
         uint32_t i = ui.page + 1u;
         while (i < NPAGES && PAGES[i].fam == fam && !page_shown(&PAGES[i]))
@@ -561,6 +583,10 @@ UI_SMALL static void page_fix(void)
 
 UI_SMALL static void go_home(void)
 {
+#if FELUCCA_KID
+    kid_enter();   /* SLOOP JR: home is the clubhouse (menu/holds/locks cleared, seq_mode 0) */
+    return;
+#endif
 #if FELUCCA_ARRANGER
     ui.home = 0;
     ui.page = (uint8_t)page_first(FAM_TRK);
@@ -702,6 +728,12 @@ UI_SMALL static void select_engine(uint32_t e)
 {
     if (is_drum(TSEL))
         return;
+#if FELUCCA_KID
+    if (kid_on() && !kid_engine_ok(e)) {
+        kid_refuse();
+        return;
+    }
+#endif
     set_engine(e);
     ui_say("ENGINE ", ENGINES[TSEL->eng_req]->name);
     ui.force = 1;
@@ -893,6 +925,9 @@ typedef struct {
     uint32_t fmagic;
     uint16_t fav[FAV_N];
     uint32_t fcrc;
+#if FELUCCA_KID
+    kid_rec_t kid;      /* SLOOP JR: the progress record, after the stock 80 bytes (finding 16) */
+#endif
 } side_rec_t;
 UI_SMALL static void side_fill(side_rec_t *r)                /* what the settings' side record holds now */
 {
@@ -902,6 +937,9 @@ UI_SMALL static void side_fill(side_rec_t *r)                /* what the setting
     r->fmagic = FAVS_MAGIC;
     memcpy(r->fav, fav, sizeof fav);
     r->fcrc = st_crc32(&r->fmagic, 4u + sizeof r->fav);
+#if FELUCCA_KID
+    kid_fill(&r->kid);   /* after the memset, from the RAM copy (finding 17) */
+#endif
 }
 UI_SMALL static void side_take(side_rec_t *r)                /* a side record read back: what checks out (theme, favourites) */
 {
@@ -911,6 +949,9 @@ UI_SMALL static void side_take(side_rec_t *r)                /* a side record re
     }
     if (r->fmagic == FAVS_MAGIC && r->fcrc == st_crc32(&r->fmagic, 4u + sizeof r->fav))
         memcpy(fav, r->fav, sizeof fav);
+#if FELUCCA_KID
+    kid_take(&r->kid);
+#endif
 }
 /* the PRESETS list: the favourites, then every factory sound by kind, then the user presets */
 UI_SMALL static uint32_t preset_pos(uint32_t *total)
@@ -964,6 +1005,13 @@ UI_SMALL static int preset_go_to(track_t *t, uint32_t n)
 UI_SMALL static void pc_poll(void)
 {
     uint32_t i;
+#if FELUCCA_KID
+    if (kid_on()) {           /* kid mode: MIDI Program Change never changes a sound (finding 8) */
+        for (i = 0; i < NTRK; i++)
+            pc_req[i] = 0;
+        return;
+    }
+#endif
     for (i = 0; i < NTRK; i++) {
         uint32_t r = pc_req[i], n, bank = pc_bank[i];
         char b[12];
@@ -999,6 +1047,12 @@ UI_SMALL static void preset_go(uint32_t n)                    /* load list index
     uint32_t k, e = preset_at(n, &k), b[FAV_N];
     if (is_drum(TSEL))
         return;                                      /* one GM kit: nothing to browse */
+#if FELUCCA_KID
+    if (kid_on() && !kid_engine_ok(e)) {             /* a locked engine, or a user preset before L9 */
+        kid_refuse();
+        return;
+    }
+#endif
     fav_at = (int8_t)(n < fav_list(b) ? (int32_t)n : -1);
     if (e == NENGINES) {
         up_load(k);
@@ -1035,6 +1089,17 @@ UI_SMALL static void track_select(uint32_t i)
 {
     if (i >= NTRK || i == song.sel)
         return;
+#if FELUCCA_KID
+    if (kid_on() && !kid_track_ok(i)) {   /* skip locked tracks in the direction of travel (the drum
+                                         * track is 3, not 0: a prefix gate would strand her on it) */
+        int32_t dir = (int32_t)i > (int32_t)song.sel ? 1 : -1, j = (int32_t)i;
+        while (j >= 0 && j < NTRK && !kid_track_ok((uint32_t)j))
+            j += dir;
+        if (j < 0 || j >= NTRK || j == (int32_t)song.sel)
+            return;
+        i = (uint32_t)j;
+    }
+#endif
     song.sel = (uint8_t)i;
     rec_follow(i);                                   /* LIVE: recording follows the selected track */
     ui.entry_open = 0;

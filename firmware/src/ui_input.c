@@ -26,7 +26,7 @@ UI_SMALL static void led_put(uint8_t *nl, uint32_t id, int on)
 }
 
 static const uint8_t FAM_BTN[FAM_COUNT] = {B_HOME, B_ENV, B_LFO, B_FX, B_SCL, B_EDIT, B_GLO, B_SAVE,
-                                           B_ARP, B_SEQ, B_HOME};   /* button of each page family (TRACKS: HOME) */
+                                           B_ARP, B_SEQ, B_HOME, B_HOME};   /* button of each page family (TRACKS: HOME; SLOOP JR: HOME) */
 
 UI_SMALL static uint32_t cur_fam(void) { return ui.home ? FAM_HOME : cur_page()->fam; }
 UI_SMALL static uint32_t cur_btn(void)                      /* the button of the screen shown */
@@ -558,6 +558,10 @@ UI_SMALL static void edit_param(uint32_t slot, int32_t steps)
         return;
     v = d->names == ESYNC_NAMES || d->names == N_IBITS || d->names == N_IRATE ? names_turn(d, *vp, steps)   /* (a name a detent) */
                                     : clamp(*vp + accel(EN_K1 + slot, steps, d->names ? 0 : d->max - d->min), d->min, d->max);
+#if FELUCCA_KID
+    if (is_drum(TSEL) && id == P_E0 && v > (int32_t)kid_kit_max())
+        v = (int32_t)kid_kit_max();   /* EDIT 1 KNOB 1 is the kit too: the level's kits (finding 9) */
+#endif
     *vp = (int16_t)v;
     if (pg->scope != SC_GLOBAL && p_lockable(id))
         ui.lock_par = (uint8_t)id;                        /* the SEQ layer's lock parameter: the last one touched */
@@ -1024,6 +1028,10 @@ UI_SMALL static void holds_input(uint32_t pressed, uint32_t now_ms)
     static uint32_t rec_t0, save_t0;
     uint32_t rb = 1u << panel.btn[B_REC], sb = 1u << panel.btn[B_SAVE];
     uint32_t rec_down = (fm1_in.buttons & rb) != 0u, save_down = (fm1_in.buttons & sb) != 0u;
+#if FELUCCA_KID
+    if (kid_btn_blocked(B_REC))
+        rec_down = 0;   /* kid mode: REC held never clears the track (finding 22); the tap still records */
+#endif
     if (on_song_page())
         rec_down = 0, pressed &= ~rb;                     /* (the song page: REC stores a section) */
     /* REC */
@@ -1117,7 +1125,11 @@ UI_SMALL static void ui_input(void)
     ml_poll();                                          /* MIDI LEARN: a CC came for the picked parameter (2.6) */
     page_fix();                                         /* (a page the track does not have: its neighbour, 2.6) */
     midi_entry();                                       /* (the STEP page's MIDI notes: read every frame, 2.6) */
+#if FELUCCA_KID
+    if (home == BT_HOLD && !kid_on()) {                 /* SLOOP JR: the 700 ms hold opens nothing (the parent menu is 3 s, in kid_input) */
+#else
     if (home == BT_HOLD) {                              /* HOME held: open the menu, or leave it */
+#endif
         if (ui.menu) {
             menu_close();
         } else {
@@ -1130,6 +1142,10 @@ UI_SMALL static void ui_input(void)
         }
     }
     kb_grid = (uint8_t)grid_keys_on();                  /* (seq.c: the keys are the grid's steps) */
+#if FELUCCA_KID
+    if (kid_input(pressed, notes, home))                /* SLOOP JR: the clubhouse / HOME interception (after kb_grid: finding 31) */
+        return;
+#endif
     if (ui.menu) {                                      /* HOME / REC taps do nothing here */
         punch.hold = 0;
         thr_req = 0;
@@ -1272,7 +1288,11 @@ UI_SMALL static void ui_input(void)
          * being edited. Every detent counts */
         uint32_t total, cur = preset_pos(&total);
         if (is_drum(TSEL))
+#if FELUCCA_KID
+            TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, (int32_t)kid_kit_max());
+#else
             TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
+#endif
         else if (total)
             preset_go((uint32_t)(((int32_t)cur + s % (int32_t)total + (int32_t)total) % (int32_t)total));
     }

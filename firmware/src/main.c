@@ -195,6 +195,9 @@ UI_SMALL static void felucca_init(void)
     song.g[G_RMCH] = midi_set[8];                    /* (2.7) GLO > MIDI 3: REMOTE */
     song.g[G_FXFADE] = fxfade;                        /* (2.7.2) GLO > MASTER 2: the punch-in FX fade */                    /* (2.7) GLO > MIDI 3: FX CH */   /* settings of the FM-1) */
     layers_init();                            /* the panel's layer buttons for the keys (ui_layers.c) */
+#if FELUCCA_KID
+    kid_init();                               /* SLOOP JR: REMOTE off, the drums first, locked layers */
+#endif
     go_home();
     ui.force = 1;
 }
@@ -288,7 +291,11 @@ UI_SMALL static void fm1_main(void)
              * ghost / hard modifiers, held for a long time */
             static uint32_t t0, shown;
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
-            if ((fm1_in.buttons & both) != both || song.playing) {
+            if ((fm1_in.buttons & both) != both || song.playing
+#if FELUCCA_KID
+                || !ui.menu   /* SLOOP JR: the parent menu must be open (finding 10: a child holding both must not reach UBOOT) */
+#endif
+            ) {
                 if (shown)
                     ui_say("UPDATE MODE ", "CANCELLED");
                 shown = 0;

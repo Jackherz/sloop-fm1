@@ -1114,6 +1114,14 @@ UI_SMALL static void ui_draw(void)
         ui.force = 0;
         return;
     }
+#if FELUCCA_KID
+    if (kid_on_screen()) {                              /* SLOOP JR: the clubhouse (three bands, kid.c) */
+        kid_draw();
+        ui_timers();
+        ui.force = 0;
+        return;
+    }
+#endif
     if (vis_shown()) {                                  /* the visualiser over the TRACKS screen */
         vis_draw();
         ui_timers();

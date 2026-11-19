@@ -712,6 +712,10 @@ UI_SMALL static void autosave_tick(void)                /* main loop */
 {
 #if FELUCCA_FLASH
     uint32_t h, now = fm1_ms;
+#if FELUCCA_KID
+    if (kid_mission_active)   /* SLOOP JR: a mission is up; her song is in OBJ_AUTOSAVE, the seed must not be saved */
+        return;
+#endif
     if (!flash_ok || song.playing || transport_req || rec_wait || ft_on || ui.menu ||
         now - ui_input_ms < AUTOSAVE_IDLE || now - autosave_ms < AUTOSAVE_GAP || now - autosave_checked < 1000u)
         return;
@@ -764,7 +768,12 @@ typedef struct {
     uint32_t lights;                               /* SLOOP 2.3: the backlight (panel.c lights_word); appended,
                                                     * so 2.2 still reads its part (st_load cuts at its size) */
 } persist_t;
+#if FELUCCA_KID
+_Static_assert(sizeof(side_rec_t) == 80u + sizeof(kid_rec_t) && sizeof(side_rec_t) <= ST_SIDE_MAX,
+               "the side record: theme, favourites, kid progress (after the stock 80 bytes)");
+#else
 _Static_assert(sizeof(side_rec_t) == 80u && sizeof(side_rec_t) <= ST_SIDE_MAX, "the side record: theme, favourites");
+#endif
 static side_rec_t side_out;
 #define PERSIST_SIZE_V22 __builtin_offsetof(persist_t, lights)   /* the settings as 2.2 wrote them (no lights) */
 _Static_assert(sizeof(persist_t) == PERSIST_SIZE_V22 + 4u, "lights: the last word, no padding before it");
@@ -963,6 +972,9 @@ UI_SMALL static int settings_write(const persist_t *p)
         return -1;
     dsu_dirty = 0;
     fav_dirty = 0;
+#if FELUCCA_KID
+    kid_dirty = 0;
+#endif
     memcpy(midi_saved, mp, sizeof midi_saved);
     return 0;
 }
@@ -1012,7 +1024,11 @@ UI_SMALL static void settings_save(void)
     {
         uint8_t mp[MIDI_PART];
         midi_part_fill(mp);
-        if (!memcmp(&p, &persist_saved, sizeof p) && !memcmp(mp, midi_saved, sizeof mp) && !fav_dirty)
+        if (!memcmp(&p, &persist_saved, sizeof p) && !memcmp(mp, midi_saved, sizeof mp) && !fav_dirty
+#if FELUCCA_KID
+            && !kid_dirty   /* SLOOP JR: the progress record changed (it rides along) */
+#endif
+            )
             return;                                /* unchanged: no erase cycle */
     }
     if (settings_write(&p) == 0)
@@ -1158,6 +1174,10 @@ UI_SMALL static void persist_flush_now(void)
 {
     sections_write();
 #if FELUCCA_FLASH
+#if FELUCCA_KID
+    if (kid_mission_active)   /* SLOOP JR: mid-mission the working project is the seed; her song is already in OBJ_AUTOSAVE */
+        return;
+#endif
     if (flash_ok && !arrangement_clock.running) {     /* (a song playing: the tracks hold a section) */
         proj_capture(&autosave_buf);
         if (autosave_buf.sum != autosave_hash && st_save(OBJ_AUTOSAVE, &autosave_buf, sizeof autosave_buf) == 0)

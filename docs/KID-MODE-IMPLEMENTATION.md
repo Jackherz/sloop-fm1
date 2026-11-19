@@ -214,6 +214,15 @@ autosave's own rule is the template to copy — stopped, `!transport_req`, `!rec
 2.5 s since the last input, and `audio_quiet()` (`project.c:715`). The mission loader must stop the
 transport before any of this, which is also what the child expects.
 
+**As built (S4):** `kid_mission_enter()` / `kid_mission_leave()` in `kid.c` return **int** and are
+**retried**, because `project_apply()` itself asks for a stop (`transport_req = 2`) and a second
+`project_restore()` before the audio block services it refuses (returns 3) — finding 33 in
+`KID-MODE-STAGES.md`. 0 = the transport is stopping, call again (nothing written yet); 1 = done; -1 =
+refused (her song cannot be saved / the seed is not a project / nothing to leave). `kid_mission_leave()`
+clears `kid_mission_active` only after her song is really back, so a failed restore leaves the mission up
+and a reset still brings her song back from `OBJ_AUTOSAVE`. `tests/kid_test.c` kid test 3 proves 30 cycles
+plus a mid-mission power cut byte-identical.
+
 ---
 
 ## 6. Witnesses and evaluation

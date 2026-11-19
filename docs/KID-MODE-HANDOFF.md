@@ -6,8 +6,13 @@ follow it.
 **Project:** a kid-friendly build of SLOOP for a 10-year-old (pianist, double-bassist), given as a
 Christmas gift, where finishing musical missions unlocks more of the firmware.
 
-**State:** planning complete, **no firmware source modified**, nothing built for the device yet. All
-work so far is documentation plus two measurement tools, committed on this branch.
+**State:** planning complete; **S0 (flag scaffolding), S1 (the three-level gate), S2 (the
+progress record), S3 (the clubhouse, input map, and the screen) and S4 (the two rooms / the
+snapshot) are built** — `firmware/src/kid.h`/`kid.c`, the `FELUCCA_KID` flag in `tools/build.py`,
+and `tests/kid_test.c` (155 checks, levels 1..10, kid test 3 = 30 missions + a power cut) — with the
+stock suite still green (182 golden renders, 0 changed; `ui_pages`, `knob_walk`, `seq2`, `storage`,
+UBSan all pass). Nothing built for the device yet (no toolchain in this sandbox). Next: **S5, the
+mission engine**.
 
 ---
 
@@ -19,7 +24,7 @@ work so far is documentation plus two measurement tools, committed on this branc
 | `KID-MODE-MEASUREMENTS.md` | second. What the firmware actually costs, with numbers — and §2b, which answers the space question from the shipped package: 9,744 B free, so nothing has to be cut. |
 | `KID-MODE-IMPLEMENTATION.md` | before writing any code. Exact seams (file/function), the gate, the clubhouse screen, the snapshot, the progress record, the test plan, the order of work, and a list of traps. |
 | `KID-MODE-CURRICULUM.md` | before writing mission content. All 30 missions with screen text, seed recipes, machine checks, printed-card copy, and the reward design with its research basis. |
-| `KID-MODE-STAGES.md` | **when you start building, and after every merge.** A code sweep of the paths the kid build touches: 20 findings with `file:line` (two of them would have lost her work), the five decisions they force, and the stage-by-stage order of work with a gate between each. |
+| `KID-MODE-STAGES.md` | **when you start building, and after every merge.** A code sweep of the paths the kid build touches: 33 findings with `file:line` (two of them would have lost her work, and three were found only while building S1–S4), the five decisions they force, and the stage-by-stage order of work with a gate between each. |
 
 Plus: `docs/firmware/sloop-2.8.5.fwsc` (the stock package to install on the device as the base and the
 graduation target), and `tools/measure_flash.sh`, `tools/measure_code.sh`, `tools/measure_samples.py`,
@@ -133,7 +138,7 @@ graduation target), and `tools/measure_flash.sh`, `tools/measure_code.sh`, `tool
 | risk | state |
 | --- | --- |
 | Flash budget | **Retired.** 9,744 B free today, 14.4 KB with the text logo, against an 8–12 KB estimate — and no sample sets need cutting, so the preset bank and the golden renders stay identical to stock. |
-| A child losing her work | Designed for (two rooms, snapshot, tests) but **not yet built**. This is the top implementation risk. |
+| A child losing her work | **Built and proven on the host** (S4): 30 mission cycles and a mid-mission power cut, her song byte-identical after each (`tests/kid_test.c` kid test 3). Still unproven on hardware, and the mission engine (S5) has to keep every write behind `kid_mission_active`. |
 | Content written too long for a 240 px screen | Budgeted (28 chars/line at FONT_S) and pre-written to fit, but unverified on hardware. |
 | Playtesting slipping past mid-December | Real. Mitigation is in the plan's §13: decide the fallback on 15 Dec, not 24 Dec. The fallback (stock SLOOP + printed cards + hand-unlocking) is a good gift on its own. |
 | Upstream releases during December | Low: kid files are separate and the audio path is frozen. |

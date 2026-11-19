@@ -382,8 +382,8 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
 
 /* ------------------------------------------------------------ pages --- */
 enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_FX, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_SEQ, FAM_TRK,
-       FAM_COUNT };
-enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK, SC_SONG, SC_DRUM };
+       FAM_KID, FAM_COUNT };
+enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK, SC_SONG, SC_DRUM, SC_KID };
 enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_BROWSE, GR_SLOTS, GR_USER, GR_TRK,
        GR_SLCR, GR_INS };
 
@@ -438,6 +438,9 @@ static const page_t PAGES[] = {
     {"SONG", FAM_SEQ, SC_SONG, GR_NONE, {0xFF, 0xFF, 0xFF, 0xFF}},
     {"TRACKS", FAM_TRK, SC_TRK, GR_TRK, {0, 1, 2, 3}},   /* REC button; TRACK LEVEL LEN PAN */
     {"DRUMS", FAM_TRK, SC_DRUM, GR_NONE, {0xFF,0xFF,0xFF,0xFF}},
+#if FELUCCA_KID
+    {"SLOOP JR", FAM_KID, SC_KID, GR_NONE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* the clubhouse: level, mission, badges (S3) */
+#endif
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 
@@ -448,6 +451,8 @@ static int page_for_drum(const page_t *pg)
 {
     if (pg->scope == SC_STEP)                       /* (2.4) the synth steps' roll: the drums have their grid. Reached */
         return 0;                                   /* by ALGO from a synth track, it drew the drum steps as notes */
+    if (pg->scope == SC_KID)                        /* SLOOP JR: the clubhouse is no track's page */
+        return 0;
     if (pg->scope == SC_GLOBAL)
         return pg->graph != GR_BROWSE && pg->graph != GR_USER;
     return pg->scope != SC_ENGINE && (pg->scope != SC_TRACK || pg->fam == FAM_SEQ || pg->graph == GR_SLCR ||
@@ -458,6 +463,10 @@ static int page_for_drum(const page_t *pg)
 /* a page the buttons and SELECT reach on the selected track: EDIT > FILTER (TYPE) on ANALOG only */
 static int page_shown(const page_t *pg)
 {
+#if FELUCCA_KID
+    if (!kid_page_ok((uint32_t)(pg - PAGES)))
+        return 0;   /* SLOOP JR: the level gate (docs/KID-MODE-STAGES.md S1) */
+#endif
     return pg->id[0] != P_FTYPE || (!is_drum(TSEL) && TSEL->eng_req % NENGINES == 0u);
 }
 
