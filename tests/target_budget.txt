@@ -7,18 +7,28 @@
 # SLOOP 2.4: FM6 (fm6_op_run, fm6_op_fb: the per-sample operator loops; fm6_render: the voice's output loop)
 # are in FUNCS without a budget yet: the engine was ported on a host without the pi32v2 toolchain; the
 # next ./build.sh + BUDGET_UPDATE=1 adds their lines (until then they print "no budget", not a failure).
+# SLOOP JR (2026-11-19, hand-edited, not BUDGET_UPDATE): sample_render 126 -> 593, grain_render 1734 -> 2387,
+# drums_mix 6153 -> 6811 and fm1_alnk0_irq 174 -> 268 set to their cost in upstream 2.8.5 (bac9c05), measured
+# the same there as on this branch: the budgets were last written at 2.4 and 2.5-2.8.5 grew them, SLOOP JR adds
+# none. sample_render's +371 % is mostly layout: 2.8.4's UNISON start (m0 = *m, a memcpy) and the per-call
+# bits / 10 land inside the loop's span, so this estimate weighs them as loop work; the per-sample loop gained
+# no loop or divide, and the host CPU check (cpu_baseline.txt, counted) passes for every SAMPLE preset. The
+# ISR's +54 % is the one to watch on the device. FM6's three lines added from the same build.
 analog_render 638
 digital_render 333
 phase_render 79
 lofi_render 128
-sample_render 126
+sample_render 593
 formant_render 314
 trio_render 341
 trio_pass 175
 drawbar_render 267
 drawbar_block 102
-grain_render 1734
+grain_render 2387
 grain_block 138
 slicer_track 825
-drums_mix 6153
-fm1_alnk0_irq 174
+drums_mix 6811
+fm1_alnk0_irq 268
+fm6_op_run 72
+fm6_op_fb 26
+fm6_render 362
