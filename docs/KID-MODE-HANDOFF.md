@@ -11,17 +11,19 @@ work so far is documentation plus two measurement tools, committed on this branc
 
 ---
 
-## 1. The four documents
+## 1. The documents
 
 | read | when |
 | --- | --- |
 | `KID-MODE-PLAN.md` | first. The design: audience, constraints, the 10 levels, the two rooms, gating philosophy, timeline, risks, licensing. |
-| `KID-MODE-MEASUREMENTS.md` | second. What the firmware actually costs, with numbers. Explains why the sample bank, not the UI, pays for the project. |
+| `KID-MODE-MEASUREMENTS.md` | second. What the firmware actually costs, with numbers — and §2b, which answers the space question from the shipped package: 9,744 B free, so nothing has to be cut. |
 | `KID-MODE-IMPLEMENTATION.md` | before writing any code. Exact seams (file/function), the gate, the clubhouse screen, the snapshot, the progress record, the test plan, the order of work, and a list of traps. |
 | `KID-MODE-CURRICULUM.md` | before writing mission content. All 30 missions with screen text, seed recipes, machine checks, printed-card copy, and the reward design with its research basis. |
+| `KID-MODE-STAGES.md` | **when you start building, and after every merge.** A code sweep of the paths the kid build touches: 20 findings with `file:line` (two of them would have lost her work), the five decisions they force, and the stage-by-stage order of work with a gate between each. |
 
 Plus: `docs/firmware/sloop-2.8.5.fwsc` (the stock package to install on the device as the base and the
-graduation target), and `tools/measure_flash.sh` / `tools/measure_code.sh` (the measurement harnesses).
+graduation target), and `tools/measure_flash.sh`, `tools/measure_code.sh`, `tools/measure_samples.py`,
+`tools/decode_fwsc.py` (the measurement harnesses — all but the first run without a toolchain).
 
 ---
 
@@ -70,6 +72,8 @@ graduation target), and `tools/measure_flash.sh` / `tools/measure_code.sh` (the 
 | "the image is full, 0–4.6 KB headroom" | **9,744 B free** (14.4 KB with the text logo) | the flash risk is retired, and no feature must be cut |
 | "the build only fits with a text boot logo" | the shipped image **contains the bitmap splash** | the text-logo 4.6 KB is still in reserve |
 | "cutting FLUTE+SCRCH frees 22,866 B; 40,381 B is shared between sets" | **34,442 B, and nothing is shared** (`tools/measure_samples.py`) | a zone's `n` is the decoded sample count, not stored bytes; the old table double-counted |
+| "snapshot her song into section slot D" | **the autosave object**, with autosave suspended during a mission (`KID-MODE-STAGES.md` §2.1) | slot D is her live section and `sections_write()` would flush the mission over her saved song; a new object is unplaceable and there is no RAM for another `project_t` |
+| "one page gate decides what she can reach" | **a page gate plus a value gate** (`select_engine`, `preset_go`, `P_E0`, `track_select`, and MIDI PC ignored) | kits and presets are values, and `pc_poll()` changes them from MIDI with no UI involved |
 
 **Not done**
 
@@ -94,7 +98,9 @@ graduation target), and `tools/measure_flash.sh` / `tools/measure_code.sh` (the 
 2. **Do not start by measuring.** The space question is answered offline: 9,744 B free, 14.4 KB with
    the text logo, 8–12 KB needed (`KID-MODE-MEASUREMENTS.md` §2b). Run `tools/measure_flash.sh` when you
    have the toolchain, but only to confirm per-flag deltas and that a stock build prints `image 571820 B`.
-3. **Then start at task 1 of `KID-MODE-IMPLEMENTATION.md` §13** and go down the list. Do not build
+3. **Then work `KID-MODE-STAGES.md` §3 in order** (it supersedes the task list in
+   `KID-MODE-IMPLEMENTATION.md` §13, which was written before the code sweep), and do not pass a stage's
+   gate in §4 until it is true. Do not build
    content before the gate and the two-rooms snapshot exist: those two decide whether a child can lose
    her work, and that is the one unrecoverable failure in this project.
 4. **Write `tests/kid_test.c` early**, before the UI. The gate matrix is a table, and a table is the

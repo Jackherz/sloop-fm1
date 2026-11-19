@@ -173,29 +173,37 @@ Decide: kid mode disarms REC when a mission loads.
 
 ## 5. The two rooms (must be built early, everything depends on it)
 
-The user chose "strict tutorial + sandbox always open". The snapshot is the thing that makes that
-choice safe.
+The user chose "strict tutorial + sandbox always open". The snapshot is the thing that makes that choice
+safe. **Corrected 20 Nov — the first version of this section said "save it to section D", which would have
+destroyed her saved section D** (`docs/KID-MODE-STAGES.md` §1, findings 3, 4 and 5):
+
+- `proj_slot[4]` (`project.c:153`) is her **live sections A–D** in `.noinit`, and
+  `sections_write()` (`project.c:1138`, called from `project.c:1215`) flushes any `sec_dirty` slot to
+  flash. Using slot D as a scratch area writes the mission over her song.
+- A new flash object is not available either: the "free" sector 0xFB000 is in no range that
+  `FL_RANGE_OK` accepts (`fm1_flash.h:39-55`), and an appended `OBJ_*` lands in `st_sector()`'s default
+  branch at 0xA5000 — inside the user sample slots (`storage.c:55`).
+- And there is no RAM for a fifth `project_t`: NOINIT is 15,696 B and `proj_slot[4]` can take 15,360 of
+  it (`app.ld:20`, `project.c:152`).
+
+**So the snapshot is the autosave object, and a mission is a state that must not be persisted:**
 
 | Step | Existing function (verified) |
 | --- | --- |
-| read what is playing into a project buffer | `project.c` `proj_capture()` (~460) |
-| write that buffer to a section slot | `project.c` `project_save()` (~583) — but see the trap: it uses `SEC_NAME` and speaks to the user |
-| make it the live state again | `project.c` `proj_apply()` (~489) and `section_load()` (~1132) |
-| the autosave object | `project.c` `autosave_tick()` (~711), `OBJ_AUTOSAVE` |
+| her song, as of the last quiet moment, is already in flash | `autosave_tick()` (`project.c:711`), `OBJ_AUTOSAVE` |
+| put it there now if it is not yet | `proj_capture(&autosave_buf)` + `st_save(OBJ_AUTOSAVE, …)` (`project.c:723`) |
+| stop autosave while a mission runs | one flag: `autosave_tick()` returns early |
+| make it the live state again on the way out | `project_restore(4, …)` (`project.c:1082`) / `project_apply()` (`project.c:489`), then `autosave_hash = restored sum` |
+| the pre-reset flush must write **her** song, not the seed | `persist_flush_now()` (`project.c:1157`) |
 
-Design: on entering a mission, `proj_capture()` → if the buffer differs from the last snapshot, save it
-to **slot D** (not A/B/C, so song mode at level 9 still has its four) and remember a CRC. On leaving,
-`proj_apply()` the snapshot. Slot D is reserved only until level 9; after that, A–D belong to her and
-the sandbox uses autosave alone.
+Costs: one 4 KiB erase on entering a mission (usually already paid), one flag, and a test. A power cut
+during a mission brings back her song, which is the correct answer. **Do not call `project_save()`**: it
+speaks to the user ("SAVED SECTION D"), refuses while playing, and sets `song_dirty`.
 
-**Trap:** `project_save()` is a UI-facing function — it prints "SAVED SECTION D", refuses while playing
-("STOP BEFORE SAVE"), and sets `song_dirty`. Do **not** call it from the kid paths. Extract the
-capture→store half into something quiet, or replicate the `st_save(OBJ_PROJECT0+3, …)` call directly
-(`project.c` ~592), with the same stop-while-playing precondition.
-
-**Trap:** flash access silences the audio for the whole sector erase (`felucca.c fl_erase4k_quiet`).
-Only snapshot while stopped, never on entering a mission mid-song. The mission loader must therefore
-stop the transport first — which is also what the child expects.
+**Trap:** flash access silences the audio for the whole sector erase (`felucca.c fl_erase4k_quiet`), and
+autosave's own rule is the template to copy — stopped, `!transport_req`, `!rec_wait`, `!ft_on`, no menu,
+2.5 s since the last input, and `audio_quiet()` (`project.c:715`). The mission loader must stop the
+transport before any of this, which is also what the child expects.
 
 ---
 
@@ -347,21 +355,25 @@ find the undo (`EDIT` on a card, hold `EDIT` + `OCT−` on an instrument screen)
 
 ## 13. Order of work
 
+**(20 Nov) This list is the dependency order; `KID-MODE-STAGES.md` §3 is the same work with dates,
+entry/exit criteria and a gate between each stage. Where they differ, the stages doc wins — it was
+written after a code sweep that found two ways to lose her work.**
+
 | # | Task | Depends on | Why this order |
 | --- | --- | --- | --- |
-| 1 | Run `tools/measure_flash.sh` on a machine with the toolchain | — | the only unknown left in the budget |
-| 2 | `FELUCCA_KID` flag + `kid.h` + the gate, refusing everything but level 1 | 1 | proves the choke point before there is content |
-| 3 | `kid_test.c` gate matrix | 2 | fixes the progression table in code, not in prose |
-| 4 | Progress record in the side record + parent menu reset | 2 | so testing a level twice is easy |
-| 5 | Two rooms (snapshot/restore) | 2, 3 | everything else assumes it |
-| 6 | Clubhouse screen + the button map (§4) + the refusal line | 3, 4 | first thing a child can actually touch |
-| 7 | Witnesses + predicates + seeds for levels 1–2 (6 missions) | 5, 6 | a playable slice to test the feel with |
-| 8 | **Playtest #1** with a real 10-year-old, 20 minutes | 7 | before writing 24 more missions |
-| 9 | Missions 7–30, one level at a time, with a playtest after level 4 and level 8 | 7 | content is cheap to change before it is a system |
-| 10 | Reward pass (band row, surprise sound, jingle), hint ladder | 9 | polish that needs the whole course present |
-| 11 | Volume ceiling, lights defaults, parent docs | 10 | safety last, because it does not block testing |
-| 12 | Cut sample sets, own golden baseline, release build, install on the gift unit | 1, 11 | the point of no return, do it late |
-| 13 | Print the cards from `kid_cards.tsv`, assemble the box | 10 | can run in parallel from day one |
+| 0 | Order the second FM-1; toolchain + a stock build (`image 571820 B`); `FELUCCA_KID` in the flag whitelist | — | the measurement no longer blocks anything, but the hardware does |
+| 1 | The gate, both halves (§1 and §2.2 of the stages doc) | 0 | proves the choke point before there is content |
+| 2 | `kid_test.c` gate matrix, incl. "every family keeps a visible page" | 1 | fixes the progression table in code, not in prose |
+| 3 | Progress record in the side record + parent menu reset | 1 | so testing a level twice is easy |
+| 4 | Clubhouse screen + the button map (§4) + the refusal line | 1, 3 | first thing a child can actually touch |
+| 5 | Two rooms (§5: the autosave snapshot) | 1, 2 | everything else assumes it; nothing is safe until it passes |
+| 6 | Witnesses + predicates + seeds for levels 1–2 (6 missions) | 4, 5 | a playable slice to test the feel with |
+| 7 | **Playtest #1** with a real 10-year-old, 20 minutes | 6 | before writing 24 more missions |
+| 8 | Missions 7–30, one level at a time, with a playtest after level 4 and level 8 | 6 | content is cheap to change before it is a system |
+| 9 | Reward pass (band row, surprise sound, jingle), hint ladder | 8 | polish that needs the whole course present |
+| 10 | Volume ceiling, lights defaults, parent docs + the power-on card | 9 | safety last, because it does not block testing |
+| 11 | Release build (no sample cuts), install on the gift unit, stock `.fwsc` in the box | 0, 10 | the point of no return, do it late |
+| 12 | Print the cards from the mission table, assemble the box | 9 | can run in parallel from day one |
 
 ---
 
@@ -400,3 +412,15 @@ find the undo (`EDIT` on a card, hold `EDIT` + `OCT−` on an instrument screen)
   cards use really renders. `-`, `:`, `/`, `!`, `?` and `'` are all 8 px too.
 - `G_NEWPRJ` calls `project_new()` with no confirmation and only refuses while the song plays
   (`ui_input.c` ~600). Omit it from kid mode; do not try to intercept it after the fact.
+- **`page_first()` is gate-blind and `ui.page` is unbounded.** Hiding a family's first page makes
+  `page_fix()` re-enter the gate every frame (`ui.c:103`, `:550`), and `cur_page()` indexes `PAGES[]`
+  with no bounds check (`ui.c:96`). Gate `page_first()` too, and assert every family keeps a visible page.
+- **A page gate does not gate a value.** Kits are `TDRUM->p[P_E0]` with three writers
+  (`ui_input.c:1273`, `ui.c:977`, the parameter editor), and engines/presets change through
+  `select_engine()`/`preset_go()`. `pc_poll()` (`ui.c:964`) changes both from MIDI with no UI involved —
+  ignore Program Change in kid mode.
+- **The screen is 240×124 at most** (`gfx.c:30` `CV_MAX`), and `cv_begin()` clamps silently. Draw the
+  clubhouse as the house's three bands, not as one 240×240 layout.
+- **Power-on and 5-second combos are child-reachable**: OCT−+OCT+ at power-on starts button calibration
+  with whatever she presses (`main.c:246`), OCT− alone enters recovery (`bootguard.h:27`), and OCT−+OCT+
+  held 5 s while stopped enters UBOOT (`main.c:286`). Leave the combos alone and put them on the card.

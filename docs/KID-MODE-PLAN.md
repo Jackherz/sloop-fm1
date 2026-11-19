@@ -8,7 +8,8 @@ Base: `sloop-fm1` at 2.8.5 (`bac9c05`), GPL-3.0.
 
 **The package:** this plan is the design. `KID-MODE-CURRICULUM.md` holds the 30 missions as a build
 spec, `KID-MODE-IMPLEMENTATION.md` the engineering map (seams, gate, snapshot, tests, order of work),
-`KID-MODE-MEASUREMENTS.md` the numbers, and `KID-MODE-HANDOFF.md` the index. Written to be handed to
+`KID-MODE-MEASUREMENTS.md` the numbers, `KID-MODE-STAGES.md` the code sweep and the order of work, and
+`KID-MODE-HANDOFF.md` the index. Written to be handed to
 another agent without re-deriving anything.
 
 **Decisions locked:**
