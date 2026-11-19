@@ -139,7 +139,11 @@ image       571,820 B    98.3 % of the slot
 free          9,744 B     1.7 %
 ```
 
-`tools/decode_fwsc.py` is committed for exactly this, and it needs no SDK. It is the inverse of
+`tools/decode_fwsc.py` is committed for exactly this, and it needs no SDK. **It is now guarded by
+`tests/run_tests.sh`**: the suite decodes the shipped 2.8.5 package and fails if the image stops being
+571,820 B or the free space stops being 9,744 B, and it feeds the tool a truncated file, random bytes and
+an empty file to prove it refuses them with a message rather than a traceback (so it can be pointed at
+arbitrary files, as the device-side use does). It is the inverse of
 `fm1pkg_make.py` and it *proves* itself: both entries' CRC16s come out `ok`, which they cannot unless
 the marker strip, the header decode and both ciphers are right. `--app out/app.bin` writes the
 decrypted image, and `--strings N` lists the printable runs with offsets (that is how the string table
