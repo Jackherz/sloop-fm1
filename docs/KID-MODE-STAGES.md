@@ -193,6 +193,45 @@ switch it off and on again."
 
 ---
 
+### 2.6 Recorded decision: the progress write is verified inside `st_save3`
+
+**The problem, exactly.** `st_save3()` (`storage.c:177-228`) writes a side record into bytes 64..255 of the
+copy's own sector, *before* the commit header, and then verifies the save by reading back the header and
+the payload body (`st_head`/`st_body`, `:222-223`). The side bytes are **not** read back. So a program
+failure there — a worn page, a write-protect window, a genuinely unhappy part — returns 0 and the UI says
+SAVED while the theme, the favourites, and (planned) her progress were never written. `st_side_load()`
+(`:166-173`) has the same blind spot on the way back: it returns whatever the flash holds.
+
+**Options, and why one is clearly right:**
+
+| option | cost | why not |
+|---|---|---|
+| verify the side bytes in `st_save3` | ~10 lines, one ≤192 B read per settings save; settings saves are rare (deferred, `project.c` `settings_later`) | — this is the one |
+| move the progress to its own `OBJ_*` | a new object *and* a new sector | no sector is free: `st_sector()`'s default branch is `0xA5000`, which is **inside the user samples** (`storage.c:55`); the flash map has 0xFB000 free but in no `FL_IN` range (`fm1_flash.h:39-55`), so it is a map change plus a tooling change plus a stock-compat question |
+| trust the record's own CRC | free | it detects corruption on *load* (a lost level, then), but it cannot make the save honest — the UI would still say SAVED |
+
+**The patch, as a sketch (verify it in `tests/` before trusting it):**
+
+```c
+if (st_side && st_side_len && st_side_len <= ST_SIDE_MAX) {      /* (2.7) the side record, before the commit */
+    uint8_t sb[ST_SIDE_MAX], back[ST_SIDE_MAX];
+    for (off = 0; off < st_side_len; off++)
+        sb[off] = ((const uint8_t *)st_side)[off];               /* (RAM source) */
+    if ((rc = st_prog(base + ST_SIDE_OFF, sb, st_side_len)) != 0)
+        return rc;
+    if (st_read(base + ST_SIDE_OFF, back, st_side_len) || memcmp(sb, back, st_side_len))
+        return -8;                                               /* the header is not written: the old copy stands */
+}
+```
+
+Returning before the header is what makes this safe: the copy is still uncommitted, so the previous copy
+remains current and a torn write costs one save, not the record. The distinct code (−8) also lets the UI
+say "not saved" instead of "SAVED" — which is the whole point.
+
+`ST_SIDE_MAX` is `ST_PAYLOAD_OFF - ST_SIDE_OFF` = **192 B** (`storage.c:19-20,160-161`), and the planned
+block is 24 B with 112 B spare, so nothing about the sizes changes.
+
+
 ## 3. The stages
 
 Each stage is a stopping point: the build works, the tests pass, and if Christmas arrived tomorrow the
@@ -226,11 +265,11 @@ gift would still be good. Sizes are estimates from the measurement doc's shares;
 | | |
 |---|---|
 | **Goal** | Level survives a power cycle; a torn write costs one level, not the file. |
-| **Work** | The 24 B block after `fcrc` (`ui.c:888`), filled in `side_fill()`, validated in `side_take()`; loaded at boot; written through `settings_save()` deferred like autosave (finding 14) — never `st_save` directly. Parent-mode reset (level 1 / level 10 / clear). |
-| **Exit** | Round trip at every level; simulated torn write keeps the previous copy (the A/B pair does this already — prove it); a kid-written settings object is still accepted by a **stock** 2.8.5 (`theme` + `favourites` intact); first boot with no record = level 1. |
+| **Work** | **First the 10-line `st_save3` side read-back (§2.6)** — without it a failed side write still reports SAVED. Then the 24 B block after `fcrc` (`ui.c:888`), filled in `side_fill()`, validated in `side_take()`; loaded at boot; written through `settings_save()` deferred like autosave (finding 14) — never `st_save` directly. Parent-mode reset (level 1 / level 10 / clear). |
+| **Exit** | Round trip at every level; **a deliberately failed side program (a sector that refuses) reports "not saved", not SAVED** (§2.6); simulated torn write keeps the previous copy (the A/B pair does this already — prove it); a kid-written settings object is still accepted by a **stock** 2.8.5 (`theme` + `favourites` intact); first boot with no record = level 1. |
 | **Tests** | kid test 2, and a stock-compat test that loads a kid-written side record through the stock `side_take()` logic. |
 | **Size** | ~400 B. |
-| **Risk** | the one thing that must not corrupt is the settings object that also holds her theme. Test against stock *before* touching the record again. |
+| **Risk** | the one thing that must not corrupt is the settings object that also holds her theme. Test against stock *before* touching the record again. The `st_save3` patch comes **before** the record work, in its own commit, so a regression there is not mixed with new fields. |
 
 ### S3 — Clubhouse, input map, and the screen  (3 days)
 
