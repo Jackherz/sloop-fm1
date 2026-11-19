@@ -333,6 +333,12 @@ seed worked in, `autosave_resume()` as at boot) brings her song back, not the se
   by `kid_demo_tick()`; **a loan cannot pass the mission** (the check is not read while one is out), so
   a demonstration is never credit; 2 → 3 `TAP SEQ: SKIP`; 3 → 4 `SKIPPED` — parked, and the mission is
   left. The rung resets when a mission starts or ends.
+- **No jingle, deliberately**: this stage's work list said "the badge/jingle", and the badge is there
+  (the level's dot fills, the record's bit is set). A completion *sound* is not: the audio path is frozen
+  (decision 9, `tests/golden.txt` must not move), there is no UI beep to reuse, and a fanfare on
+  completion is the exact "payment for pressing a button" the curriculum's §6 research warns against.
+  What she hears is her own bar landing, and then the words. If a sound is ever wanted, it belongs in S9
+  as a deliberate audio change with its golden re-baselined.
 - **The safety lesson**: the first real undo queues `SEE? GONE.` once per progress record
   (`kid_safety`, cleared by `kid_reset()`), and it waits for the header instead of overwriting `UNDO`.
 - **Two latent bugs fixed on the way**: the globals witness was a 32-bit mask although `G_COUNT` is past
