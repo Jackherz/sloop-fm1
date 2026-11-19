@@ -34,7 +34,7 @@ graduation target), and `tools/measure_flash.sh`, `tools/measure_code.sh`, `tool
 | 1 | 10 levels × 3 missions, unlocking one new capability per level, ending in free play | 19 Nov |
 | 2 | Strict tutorial **plus a free-play sandbox always available** = the two-rooms model | 19 Nov |
 | 3 | Mission seeds are recipes expanded at runtime, never stored projects | 19 Nov |
-| 4 | Progress lives in the settings' existing 192-byte side record (112 B free, ~24 B needed) | 19 Nov |
+| 4 | Progress lives in the settings' existing 192-byte side record (112 B free, ~24 B needed), which needs a verified side write first — decided 20 Nov (§2.6 of the stages doc): read the bytes back inside `st_save3` | 19 Nov, decided 20 Nov |
 | 5 | Locking is UI-level only, and it takes **three levels** — pages, values, and raw button bits (`KID-MODE-STAGES.md` §2.2). No data format changes | 19 Nov, revised 20 Nov |
 | 6 | No companion web app for v1; one mission table generates both on-device strings and printed cards | 19 Nov |
 | 7 | English only; short on-screen text; long copy on paper | 19 Nov |

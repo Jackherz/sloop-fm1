@@ -30,6 +30,35 @@ CC="${CC:-cc} -O1 -Wall -Wno-unused-function"
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
 
+# the offline package decoder (tools/decode_fwsc.py): the shipped 2.8.5 package must decode to the image
+# the measurements in docs/KID-MODE-MEASUREMENTS.md are built on, and three kinds of bad input must be
+# refused with a message rather than a traceback (it is pointed at arbitrary files on a device too).
+t_dec() {                                                 # t_dec <file> -> sets DEC_OUT/DEC_RC
+    DEC_OUT=$(python3 tools/decode_fwsc.py "$1" 2>&1) && DEC_RC=0 || DEC_RC=$?
+}
+t_offline_decode() {
+    t_dec docs/firmware/sloop-2.8.5.fwsc
+    [ "$DEC_RC" -eq 0 ] || { echo "shipped package did not decode (rc $DEC_RC)"; return 1; }
+    echo "$DEC_OUT" | grep -q "image *571,820 B" ||
+        { echo "the shipped package's image size changed: expected 571,820 B"; echo "$DEC_OUT"; return 1; }
+    echo "$DEC_OUT" | grep -q "free *9,744 B" || { echo "free space changed: expected 9,744 B"; return 1; }
+    _t=$(mktemp) || return 1
+    head -c 5000 docs/firmware/sloop-2.8.5.fwsc > "$_t" || return 1   # truncated
+    t_dec "$_t"
+    [ "$DEC_RC" -ne 0 ] || { echo "a truncated package was accepted"; rm -f "$_t"; return 1; }
+    echo "$DEC_OUT" | grep -q "Traceback" && { echo "a truncated package crashed with a traceback"; rm -f "$_t"; return 1; }
+    head -c 4096 /dev/urandom > "$_t" || return 1                     # not a package at all
+    t_dec "$_t"
+    [ "$DEC_RC" -ne 0 ] || { echo "random bytes were accepted as a package"; rm -f "$_t"; return 1; }
+    echo "$DEC_OUT" | grep -q "Traceback" && { echo "random bytes crashed with a traceback"; rm -f "$_t"; return 1; }
+    : > "$_t"                                                          # empty
+    t_dec "$_t"
+    [ "$DEC_RC" -ne 0 ] || { echo "an empty file was accepted as a package"; rm -f "$_t"; return 1; }
+    rm -f "$_t"
+    return 0
+}
+run "offline package decoder: the shipped 2.8.5 image, and three bad inputs" t_offline_decode
+
 [ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
 # the generated headers the FM6 engine needs (tools/build.py generate() makes them too; no Pillow needed)
 mkdir -p build/gen
