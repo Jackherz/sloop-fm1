@@ -137,7 +137,7 @@ Level colours follow the firmware's own (blue / green / yellow / orange / white)
 | # | Title | Screen | She does | Check | Card |
 | --- | --- | --- | --- | --- | --- |
 | 1 | FIRST HIT | `PRESS THE WHITE KEYS` / `ONE AT A TIME` | plays 8 different drum lanes | `keys⊇` 8 distinct lanes | "The white keys are a drum kit, in order: kick, kick 2, snare, clap, hat, open hat, pedal, rim. Hit them all — nothing here can break." |
-| 2 | THE BEAT | `PLAY KICK ON 1 AND 3` / `REC, THEN PLAY` | REC, hits kick four times in a bar | `lane(kick)⊇{1,5,9,13}` | "Kick on 1 and 3 is the heartbeat of nearly every dance record ever made. Count 1-2-3-4 and hit on 1 and 3." |
+| 2 | THE BEAT | `PLAY KICK ON EVERY BEAT` / `REC, THEN HIT IT` | REC, then a pad on each of the four counts | `lane(kick)⊇{1,5,9,13}` | "Kick on every count is the heartbeat of nearly every dance record ever made. Count 1-2-3-4 out loud and hit the pad on each one." |
 | 3 | YOUR KIT | `PICK A KIT YOU LIKE` / `THEN PLAY IT` | turns PRESETS through 3 kits, plays | `preset≠` and `bars≥2` | "ACOUSTIC, TIGHT, DEEP, DUST… same beat, different drum kit. Which one sounds like the music you like?" |
 
 ### Level 2 — THE GROOVE (unlocks: swing, fills, more kits)
