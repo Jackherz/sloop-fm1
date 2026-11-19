@@ -54,13 +54,14 @@ FELUCCA_KID=1 PYTHON=.venv/bin/python ./build.sh
 
 Two things to know first:
 
-- **It has never run on a real FM-1.** Everything so far is proven only in the host tests. Put the
+- **It's early.** It first ran on a real FM-1 on 2026-11-19, and mission 1 had bugs that the host
+  tests missed (fixed on 2026-11-20). Later missions have been checked only in the host tests. Put the
   normal build on first and check that it plays. Then try SLOOP JR, and keep the normal
   `.fwsc` to hand so you can go back.
-- **It only just fits.** On 2026-11-19 the image overflowed flash by 424 bytes. The build
-  script then retried by itself with the text logo instead of the picture splash
-  (`FELUCCA_LOGO_TEXT=1`), and that fits. So SLOOP JR starts with a text logo, and there's very
-  little room left for more kid features.
+- **It only just fits.** With the picture splash the image overflows flash (by 1,016 bytes on
+  2026-11-20). The build script then retries by itself with the text logo
+  (`FELUCCA_LOGO_TEXT=1`), and that fits with about 3.5 KB to spare. So SLOOP JR starts with a
+  text logo, and there's very little room left for more kid features.
 
 Both builds write the same file (`build/felucca.fwsc`) with the same identity (`FM-1_900`).
 Copy the one you want to keep before you build the other:
