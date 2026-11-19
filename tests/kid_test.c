@@ -1062,6 +1062,68 @@ int main(void)
         }
     }
 
+    /* 7: mission 1 as a child plays it (found on the device, 2026-11-20): the card says TAP THE
+     * WHITE KEYS, so she taps keys and never presses PLAY. The keys are real key presses through
+     * ui_input (not kid_mission_tick), and each one must be heard. Before the fix the keys before
+     * PLAY counted for nothing, and after PLAY the seed had selected the lead it muted: silence. */
+    {   uint32_t k, id, t, loud = 0, sel_ok = 0;
+        kid_reset();
+        kid_set_level(1);
+        settle();
+        kid_init();
+        kid_enter();
+        frames(2);
+        for (k = 0; k < 8u; k++) {
+            int32_t pk = 0;
+            fm1_in.notes |= 1u << (14u + k);
+            for (t = 0; t < 4u; t++) {
+                frame();
+                for (uint32_t i = 0; i < SCOPE_N; i++) {
+                    int32_t a = scope_buf[i] < 0 ? -scope_buf[i] : scope_buf[i];
+                    if (a > pk) pk = a;
+                }
+            }
+            fm1_in.notes &= ~(1u << (14u + k));
+            frame();
+            loud += pk > 1000;
+        }
+        for (t = 0; t < 120u && kid_mission_done(0) != 2u; t++)
+            frame();
+        check(kid_ms_id == 0 && kid_mission_active, "test 7: a key on mission 1's card starts it (no PLAY)");
+        check(song.sel == TRK_DRUM, "test 7: mission 1's keys are the drums");
+        check(loud == 8, "test 7: each of the eight keys is heard");
+        check(kid_mission_done(0) == 2u, "test 7: eight keys finish mission 1 (the first key counts)");
+        leave_mission();
+        for (id = 0; id < KID_NMISSION; id++) {    /* every seed: she plays the newest part, and it sounds */
+            const kid_seed_t *s = &KID_SEEDS[id];
+            uint32_t want = (s->parts & 8u) ? 2u : (s->parts & 4u) ? 1u : (s->parts & 2u) ? 0u : TRK_DRUM;
+            proj_capture(&proj_tmp.v6);
+            kid_seed_build(s, &proj_tmp.v6);
+            sel_ok += proj_tmp.v6.sel == want && proj_tmp.v6.t[want].p[P_MUTE] == 0;
+        }
+        check(sel_ok == KID_NMISSION, "test 7: every mission selects its newest part, unmuted");
+
+        /* SEQ on a card whose mission is not up (found on the device, 2026-11-20): LISTEN played
+         * her own song. Now it starts the mission and plays its seed, still on LISTEN's rung. */
+        kid_reset();
+        kid_set_level(1);
+        settle();
+        kid_init();
+        TDRUM->dstep[0].on[0] |= 1u;                   /* her song: a kick on step 1 (the seed has none) */
+        kid_enter();
+        frames(2);
+        tap(B_SEQ);
+        tap(B_SEQ);
+        for (t = 0; t < 300u && !(kid_mission_active && song.playing); t++)
+            frame();
+        check(kid_mission_active && kid_ms_id == 0 && kid_mission_hint_rung() == 2u,
+              "test 7: SEQ's LISTEN on a card not started starts its mission (rung 2 kept)");
+        check(song.playing && !(TDRUM->dstep[0].on[0] & 1u),
+              "test 7: ...and what plays is the mission's seed, not her song");
+        leave_mission();
+        check((TDRUM->dstep[0].on[0] & 1u) != 0, "test 7: her song is back after it");
+    }
+
     printf("kid: %d failure%s\n", fails, fails == 1 ? "" : "s");
     return fails != 0;
 }

@@ -42,7 +42,9 @@ static uint64_t kid_demo_mask;  /* (the steps it added: NSTEP is 64) */
 static uint32_t kid_demo_t;     /* when it started (ms, 0 = not running) */
 static uint32_t kid_pass_t;     /* when the check first read true (a settle before the reward) */
 static uint8_t  kid_safety;     /* the one-shot "see? gone." */
-static uint8_t  kid_req;        /* 1: PLAY asked for the mission, 2: HOME asked to leave it */
+static uint8_t  kid_req;        /* 1: PLAY (or a key) asked for the mission, 2: HOME asked to leave it */
+static uint32_t kid_keys_early; /* the keys she tapped on the card before its mission was up (they count) */
+static uint8_t  kid_listen;     /* SEQ's LISTEN started the mission: play its seed once it is up */
 static char     kid_say2[24];   /* the second message (the level that opened) */
 static uint8_t  kid_safety_m;   /* (the safety lesson is waiting for the header) */
 
@@ -359,7 +361,11 @@ int kid_input(uint32_t pressed, uint32_t notes, uint32_t home)
             }
             return 0;                                      /* a mission is up: PLAY / REC, as stock */
         }
-        enc_drop();   /* knobs and keys do nothing here (and must not jump on exit) */
+        if (notes && !kid_mission_active && kid_req != 2u) {   /* a key on the card: it says "TAP THE WHITE KEYS", */
+            kid_keys_early |= notes;                       /* so a key starts its mission as PLAY does, and counts */
+            kid_req = 1;
+        }
+        enc_drop();   /* knobs do nothing here (and must not jump on exit); the keys play as stock */
         return 1;
     }
 
@@ -653,7 +659,11 @@ static void kid_seed_build(const kid_seed_t *s, project_t *p)
     for (k = 0; k < PROJ_NG; k++)
         if (k == G_BPM)
             p->g[k] = (int16_t)s->bpm;
-    p->sel = (uint8_t)((s->parts & 2u) ? 0u : (s->parts & 4u) ? 1u : 2u);   /* the part she plays */
+    p->sel = (uint8_t)((s->parts & 8u) ? 2u : (s->parts & 4u) ? 1u : (s->parts & 2u) ? 0u : TRK_DRUM);
+                                                /* the part she plays: the newest one the mission adds (D: the
+                                                 * drums, DB: the bass, DBK: the keys, DBKL: the lead). Was
+                                                 * "B ? bass : K ? keys : lead", which put a D mission on the
+                                                 * lead it had just muted: mission 1's keys made no sound */
     for (i = 0; i < NTRK; i++) {
         proj_trk_t *t = &p->t[i];
         uint32_t mutes = 1;
@@ -787,6 +797,12 @@ void kid_mission_hint_next(void)     /* SEQ: the next rung (curriculum §7) */
         kid_rung++;
     ui.force = 1;
     if (kid_rung == 2u) {                  /* hear it again: and for a drum mission, the step itself */
+        if (kid_ms_id != id) {             /* the card's mission is not up yet: start it first, so LISTEN plays */
+            kid_listen = 1;                /* its seed (it played her own song: found on the device, 2026-11-20); */
+            kid_req = 1;                   /* kid_clock comes back here once it is up */
+            ui_message("LISTEN");
+            return;
+        }
         if (KID_MISSIONS[id].check == KCHK_LANE && kid_ms_id == id &&
             KID_MISSIONS[id].c0 < DRUM_LANES) {
             uint32_t i, lane = KID_MISSIONS[id].c0;
@@ -804,7 +820,8 @@ void kid_mission_hint_next(void)     /* SEQ: the next rung (curriculum §7) */
     } else if (kid_rung == 3u) {
         ui_message("TAP SEQ: SKIP");
     } else if (kid_rung >= 4u) {
-        kid_mission_skip();                /* parked, not failed: it comes back at power-on */
+        kid_parked |= 1u << id;            /* parked, not failed: it comes back at power-on (the card's id:
+                                            * kid_ms_id is 0xFF when it never started) */
         kid_rung = 0;
         if (kid_ms_id < KID_NMISSION)
             kid_req = 2;                   /* leave it (her song back) and offer the next */
@@ -846,14 +863,24 @@ static void kid_clock(uint32_t now)
         id = kid_mission_current();
         if (id >= KID_NMISSION) {
             kid_req = 0;
+            kid_keys_early = 0;
+            kid_listen = 0;
         } else {
             r = kid_mission_start(id);
             if (r) {
                 kid_req = 0;
                 kid_rung = 0;
-                if (r == 1)
+                if (r == 1) {
+                    kid_wit.keys |= kid_keys_early;   /* (the keys that started it count) */
                     transport_req = 1;         /* so she hears it straight away */
-                else
+                    if (kid_listen) {          /* SEQ asked: back on LISTEN's rung, now with the seed */
+                        kid_rung = 1;
+                        kid_mission_hint_next();
+                    }
+                }
+                kid_keys_early = 0;
+                kid_listen = 0;
+                if (r != 1)
                     ui_message("TRY AGAIN");
                 ui.force = 1;
             }                                  /* (0: still stopping: next frame) */
