@@ -60,17 +60,31 @@ Every mission is one row in the table in `kid_missions.c`:
 | `seed` | what is loaded when the mission starts (§3) | ≤ 24 bytes |
 | `check` | the predicate that completes it (§4) | a small struct, not a script |
 | `unlock` | feature bit(s) granted | 1 byte |
-| `hint` | the second hint, after the first ("OCT+") | ≤ 28 characters |
+| `hint` | the second hint, after the first ("SEQ") | ≤ 28 characters |
 | `card` | long copy, printed only | ≤ 220 characters |
 
 Text totals: 30 × (14 + 2×28 + 4×6 + 28 + 220) ≈ 30 × 350 = **10.5 KB of prose** — which is exactly
 why the long `card` field never enters the firmware. Only `title`/`line`/`knob`/`hint` (~30 × 100 =
-3 KB) do, and even that is a quarter of the firmware's entire text budget (17 KB), so expect to trim.
+**3 KB**) do.
 
-### The five buttons in every mission
+**Those 3 KB are an editorial choice, not a constraint.** For calibration: all the firmware's string
+literals come to 17,022 B (3 % of the image), the strings sit at the tail of the image around offset
+561 K, and there are 9,744 B of flash free. So the real limit on mission text is **what fits on a
+240 px screen and what a ten-year-old will read** — two 28-character lines — not bytes. Spend the
+savings on clarity, not on more words: the temptation is to explain in `line[2]`, and the answer is
+always the printed card.
 
-`PLAY`, `REC`, `OCT+` (hint / next), `OCT−` (back), `HOME` (mission ↔ sandbox). Nothing else responds
-except the four knobs, the three "which player" positions, and the piano keys.
+### The buttons in every mission (revised: OCT stays musical)
+
+`PLAY`, `REC`, **`SEQ` = HINT** (and "next" on the card), `HOME` = back / clubhouse / sandbox, and
+**`EDIT` = UNDO** (one button). `OCT−`/`OCT+` are **not** intercepted: they are the drum track's soft and
+hard hits (`ui_input.c` — held on the drum track) and the arp octave, i.e. *playing the instrument*, and
+the level-2 mission "hold OCT− for soft" teaches exactly that. Taking them for UI would teach her a
+gesture that stops working the day she graduates.
+
+So the only intercepted buttons are `SEQ` (hint, on a kid screen only — in the sandbox it still opens the
+sequencer), `HOME` (always: rooms and back), and `EDIT` (undo, on a kid screen only). Everything else
+responds as stock, except the features that are still locked, which answer `NOT YET · LEVEL n`.
 
 ---
 
@@ -106,7 +120,7 @@ L3 A  bpm=92 kit=808  D[kick=x...x...x...x... snare=....x.......x...]
 | `layers⊇{…}` | she held these function buttons | layer-touched mask |
 | `saved` | a section was saved | flag from `project_save` |
 | `undone` | she undid something | flag from the undo path |
-| `honour` | she pressed OCT+ on the card | explicit "I'm happy with this" |
+| `honour` | she pressed SEQ on the card | explicit "I'm happy with this" |
 | `engine=E` | the part uses engine E | `trk[].eng_req` |
 
 Every check is a comparison over state that already exists. **No audio analysis, no recording buffer,
@@ -122,9 +136,9 @@ Level colours follow the firmware's own (blue / green / yellow / orange / white)
 
 | # | Title | Screen | She does | Check | Card |
 | --- | --- | --- | --- | --- | --- |
-| 1 | FIRST HIT | `PRESS THE WHITE KEYS` / `ONE AT A TIME` | plays 8 different drum keys | `keys⊇` 8 distinct drum keys | "The white keys are a drum kit. Bottom left is the kick, then snare, clap, hats. Hit them all — nothing here can break." |
+| 1 | FIRST HIT | `PRESS THE WHITE KEYS` / `ONE AT A TIME` | plays 8 different drum lanes | `keys⊇` 8 distinct lanes | "The white keys are a drum kit, in order: kick, kick 2, snare, clap, hat, open hat, pedal, rim. Hit them all — nothing here can break." |
 | 2 | THE BEAT | `PLAY KICK ON 1 AND 3` / `REC, THEN PLAY` | REC, hits kick four times in a bar | `lane(kick)⊇{1,5,9,13}` | "Kick on 1 and 3 is the heartbeat of nearly every dance record ever made. Count 1-2-3-4 and hit on 1 and 3." |
-| 3 | YOUR KIT | `PICK A KIT YOU LIKE` / `THEN PLAY IT` | turns PRESETS through 3 kits, plays | `preset≠` and `bars≥2` | "808, ACOUSTIC, TIGHT, DEEP… same beat, different drum kit. Which one sounds like the music you like?" |
+| 3 | YOUR KIT | `PICK A KIT YOU LIKE` / `THEN PLAY IT` | turns PRESETS through 3 kits, plays | `preset≠` and `bars≥2` | "ACOUSTIC, TIGHT, DEEP, DUST… same beat, different drum kit. Which one sounds like the music you like?" |
 
 ### Level 2 — THE GROOVE (unlocks: swing, fills, more kits)
 
@@ -195,18 +209,26 @@ Level colours follow the firmware's own (blue / green / yellow / orange / white)
 | --- | --- | --- | --- | --- | --- |
 | 27 | SIX OPERATORS | `FM6: ONE KEY` / `TURN THE MACROS` | picks FM6, turns macros | `engine=ENGI_FM6` + `params≥2` | "This is how a DX7 made every bell, electric piano and bass sound of the 1980s. Six little oscillators, borrowing each other's wobble." |
 | 28 | YOUR VOICE | `RECORD 4 SECONDS` / `NOW PLAY IT LOW` | samples her voice into USR1 | `wav` present in a user slot | "Whatever you put in, you can play at any pitch. Record your voice, then play it as a bassline." |
-| 29 | SHOW AND TELL | `PLAY ME YOUR SONG` / `OCT+ WHEN DONE` | performs for you | `honour` | "This one has no test. You decide when it's finished, and you play it to someone." |
-| 30 | GRADUATE | `YOU BUILT A BAND` / `NOW THE WHOLE ONE` | — | `honour` | "Ten levels. Drummer, bass, chords, melody, and a song. The next firmware has everything unlocked — three sounds I kept back, and the whole machine." |
+| 29 | SHOW AND TELL | `PLAY ME YOUR SONG` / `SEQ WHEN DONE` | performs for you | `honour` | "This one has no test. You decide when it's finished, and you play it to someone." |
+| 30 | GRADUATE | `YOU BUILT A BAND` / `NOW THE WHOLE ONE` | — | `honour` | "Ten levels. Drummer, bass, chords, melody, and a song. Now the whole machine, with nothing locked and nothing to learn next — the same one that gets updated by itself." |
 
 **The safety mission.** Somewhere in level 2 or 3, insert a short one: `MAKE A MISTAKE` / `NOW UNDO IT`
-(`undone`). It is not on the card list as a numbered mission — it is the "you cannot break it" lesson,
-and it should fire the first time she presses EDIT+OCT− regardless of level, as a small unprompted
-"see? gone." confirmation.
+(`undone`). It is not on the card list as a numbered mission — it is the "you cannot break it" lesson, and
+it fires the first time the undo path runs, at any level, as a small unprompted "see? gone." confirmation.
 
-**Level 10 is the graduation** (decided 19 Nov): the kid build ships without two or three sampled
-sounds to pay for its code (§8 of the plan). At level 30 she keeps her projects and presets, and you
-install stock SLOOP 2.8.5 so she has everything — the three held-back sounds are part of the ceremony.
-That also means the kid build never has to be maintained forever.
+**Where undo lives matters.** On a mission card, `EDIT` is a one-button undo. On the *instrument* screens
+(where she actually fixes a wrong beat) undo is stock's two-button gesture — **hold `EDIT`, then press
+`OCT−`** (`ui_input.c` ~949) — because `EDIT` must still open the editor pages from level 5, and `OCT−/OCT+`
+must still play soft/hard drum hits. So the safety card says both: `EDIT ON A CARD` / `OR HOLD EDIT+OCT-`.
+Do not put a child in front of an unlabelled two-button chord and expect discovery.
+
+**Level 10 is the graduation** (decided 19 Nov; rationale updated 20 Nov). It was originally going to
+ship without two or three sampled sounds to pay for its code — **that is no longer necessary**: the
+measured headroom is 9,744 B, or 14.4 KB with the text logo, against an 8–12 KB need
+(`docs/KID-MODE-MEASUREMENTS.md` §2b). So nothing is held back, and the graduation becomes a *ceremony*:
+at level 30 she keeps her projects and presets, you install stock SLOOP 2.8.5, and the gift of that moment
+is that the machine is now **the same one everybody else has** — no fork to be stranded on, and every
+future upstream update applies. Keep it for that reason.
 
 ---
 
@@ -231,10 +253,10 @@ Nothing in the firmware should say "well done" for pressing a button. It should 
 A fixed ladder, no dead ends:
 
 1. The mission line is already the shortest version of the instruction.
-2. `OCT+` replays the seed pattern (hear it again) and shows one more line (`hint`).
-3. `OCT+` again: the machine *does* the step for her while she watches, then undoes it (a demonstration,
+2. `SEQ` replays the seed pattern (hear it again) and shows one more line (`hint`).
+3. `SEQ` again: the machine *does* the step for her while she watches, then reverses it (a demonstration,
    not a skip).
-4. `OCT+` a third time offers "SKIP FOR NOW" — the mission parks, the level's other missions stay
+4. `SEQ` a third time offers "SKIP FOR NOW" — the mission parks, the level's other missions stay
    open, and it returns later. Nothing is lost, nothing is marked failed.
 5. The card in her hand has the long version, written for her, with a bad drawing.
 

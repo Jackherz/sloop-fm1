@@ -1,8 +1,10 @@
-# SLOOP JR — first measurement session
+# SLOOP JR — measurements
 
-19 Nov 2026. Companion to `docs/KID-MODE-PLAN.md`. This is the "measure before you design" step: what
-the firmware costs, where the space actually is, and what still needs a machine with the JieLi
-toolchain.
+19 Nov 2026, extended 20 Nov. Companion to `docs/KID-MODE-PLAN.md`. What the firmware costs, where the
+space actually is, and what still needs a machine with the JieLi toolchain.
+
+**Start at §2b if you only read one section:** the shipped image was decrypted offline and the space
+question is answered — 9,744 B free, 14.4 KB with the text logo, against an 8–12 KB estimate.
 
 ---
 
@@ -18,7 +20,8 @@ This sandbox has no JieLi toolchain and no cross-compiler, and the two places th
 | The sample bank split per set | parsed from `build/gen/felucca_samples.h` | **exact** |
 | Text (string literals) per module | parsed from `firmware/src/*.c` | **exact** |
 | Code size per module, ranked | DWARF line tables on host builds | **ranking only** (x86-64 ≠ pi32v2) |
-| The image size, and what each feature-cut is worth | `tools/measure_flash.sh` | **needs your machine** (§7) |
+| **The image size** — 571,820 B used, 9,744 B free | decode of `docs/firmware/sloop-2.8.5.fwsc` (§2b) | **exact** (validated against the start stub) |
+| What each feature-cut is worth, per flag | `tools/measure_flash.sh` | **needs your machine** (§7), now optional |
 
 Nothing below changes the sound: `tests/golden.txt` passed untouched.
 
@@ -67,46 +70,119 @@ The app slot is **581,564 B** (`tools/fm1pkg_make.py`). The generated constant d
 | parameter icons (86 at 1 bpp) | 3,096 | 0.5 % |
 | **total constant data** | **~314,000** | **~54 %** |
 
-So roughly **267 KB is code + strings**, and the previous measurement on record (RAM.md, 2.6-era) put
-an image at 576,564 B — 5,000 B under the slot, *before* 2.7 and 2.8 added features and spent the
-4,635 B logo as the overflow fix. The honest reading: **current headroom is between 0 and about 4.6 KB.**
+So roughly **267 KB is code + strings**.
 
-**And the conclusion that matters:** a space recovery big enough for a kid mode does not come from
-code surgery. It comes from the sample bank.
+**This table is where the plan went wrong, and §2b is the correction.** None of it is wrong as
+measurement — the sample bank really is 48.7 % of the slot — but it is not the same as knowing the
+image size. The 2.6-era note on record ("an image at 576,564 B, 5,000 B under the slot") is what the
+0–4.6 KB estimate was extrapolated from, and 2.8.5 has moved: **the shipped image uses 571,820 B and
+has 9,744 B free** (§2b, decoded from the package). So:
 
-### The sample bank, per set
+- the sample bank is a *big* lever, and it is **not needed**;
+- the constant-data split is still the thing to consult if a future feature does need 20 KB+;
+- and "code surgery" is not needed either — the kid build fits in what is already spare.
 
-Measured by attributing every byte of `SMP_DATA` to the set(s) whose zones cover it (some sets share
-zones, so "exclusive" is what you actually save):
+### The sample bank, per set (corrected 20 Nov)
 
-| set | zones | exclusive bytes | what it is | keep for SLOOP JR? |
-| --- | ---: | ---: | --- | --- |
-| PERC | 27 | **87,967** | GM drum kit + percussion | **yes** — drums are level 1 |
-| PIANO | 4 | **43,356** | grand piano | **yes** — her instrument, level 4 |
-| BASS | 4 | **36,264** | upright/electric bass | **yes** — level 3 |
-| VIBES | 3 | 23,709 | vibraphone | yes (pretty, and cheap to keep) |
-| FLUTE | 3 | **19,846** | LOFI FLUTE | **cut first** |
-| HORNS | 4 | 15,439 | HORN STAB | cut if needed |
-| STRGS | 3 | 13,230 | string stab | yes — level 8's neighbour |
-| SCRCH | 1 | 3,020 | vinyl scratch | **cut first** |
-| — | — | 40,381 | shared between sets | stays with whichever set needs it |
+**The first version of this table was wrong, and the error is worth keeping in the document** because it
+is the kind of mistake that makes a plan confident and wrong. A zone is `{off, n, ls, le, …}` and `n` is
+the **decoded sample count**, not the stored size: the blob holds 4-bit IMA output, about `n/2` bytes.
+Attributing `n` bytes at `off` overlaps every neighbour and invents a "shared between sets" bucket that
+does not exist (`gen_samples.py` never deduplicates — `add()` always appends).
 
-Cutting **FLUTE + SCRCH costs 22,866 B and removes exactly two presets** (`LOFI FLUTE`, `SCRATCH`).
-That is 2× the ~12 KB the plan budgeted for kid mode, and it is a data change, not UI surgery.
-Adding HORNS takes it to ~38 KB.
+The exact measurement is easier: the blob is appended set by set and every zone carries its stored
+offset, so a set owns `[its lowest zone offset, the next set's lowest offset)`. That tiles `SMP_DATA`
+exactly — 0 bytes left over, 0 shared — and it agrees with the independent check `Σ n / 2 + padding`
+for every set. Reproduce with `python3 tools/measure_samples.py`:
 
-Two consequences to plan around, not to discover later:
+| set | zones | bytes | of the bank | what it is | status now |
+| --- | ---: | ---: | ---: | --- | --- |
+| PERC | 27 | **86,144** | 30.4 % | GM drum kit + percussion | keep — drums are level 1 |
+| PIANO | 4 | **44,104** | 15.6 % | grand piano | keep — her instrument, level 4 |
+| BASS | 4 | **39,138** | 13.8 % | upright/electric bass | keep — level 3 |
+| VIBES | 3 | 33,078 | 11.7 % | vibraphone | keep (pretty, and cheap) |
+| FLUTE | 3 | 31,422 | 11.1 % | LOFI FLUTE | keep — **no longer needed as a lever** |
+| HORNS | 4 | 26,462 | 9.3 % | HORN STAB | keep |
+| STRGS | 3 | 19,844 | 7.0 % | string stab | keep — level 8's neighbour |
+| SCRCH | 1 | 3,020 | 1.1 % | vinyl scratch | keep |
+| | | **283,212** | 100 % | | |
 
-1. Cutting sets renumbers the SAMPLE presets, so the fork gets its **own `tests/golden.txt` baseline**
-   (one `GOLDEN_UPDATE=1` run, reviewed). This is expected for a fork; it must not happen for the
-   stock build.
-2. A kid build without those sets cannot hand her "everything" at level 10. That is fine if level 10
-   is a **graduation**: install stock 2.8.5, keep her projects and presets (the project format is
-   shared, and sections/presets carry over), and give her the three missing sounds as part of the
-   ceremony. It also solves a second problem — a build without three presets is not a build you want
-   to maintain forever.
+Two numbers from the old table to correct wherever they still appear: **FLUTE is 31,422 B, not 19,846 B**,
+so cutting `FLUTE + SCRCH` would free **34,442 B, not 22,866 B**. `VIBES` is the next biggest at 33 KB,
+and `PERC` is the biggest of all at 86 KB.
+
+**None of this is needed.** §2b says there are 9,744 B free plus 4,635 B of logo, against an 8–12 KB
+estimate. Keep the rows above as the answer *if* a future kid feature turns out to be huge.
 
 ---
+
+## 2b. The real image size — decoded from the shipped package (the answer)
+
+**Reproduce it in one command:**
+
+```
+$ python3 tools/decode_fwsc.py docs/firmware/sloop-2.8.5.fwsc
+package   docs/firmware/sloop-2.8.5.fwsc: 610,076 B
+identity  FM-1_900
+entry   0  flash.bin    602,112 B at 0x400  crc ok
+entry 100  ota.bin        6,920 B at 0x93400  crc ok
+stub      04818000 = FM-1 app
+
+app slot    581,564 B
+image       571,820 B    98.3 % of the slot
+free          9,744 B     1.7 %
+```
+
+`tools/decode_fwsc.py` is committed for exactly this, and it needs no SDK. It is the inverse of
+`fm1pkg_make.py` and it *proves* itself: both entries' CRC16s come out `ok`, which they cannot unless
+the marker strip, the header decode and both ciphers are right. `--app out/app.bin` writes the
+decrypted image, and `--strings N` lists the printable runs with offsets (that is how the string table
+below was located).
+
+**This is the number the plan was waiting for, and the toolchain is not needed to get it.**
+`tools/fm1pkg_make.py` builds the app area with the JieLi SFC stream cipher under a constant key
+(`KEY = 0x980F`), and `build.py` passes exactly that constant. So the shipped
+`docs/firmware/sloop-2.8.5.fwsc` can be decoded offline:
+
+1. strip the 20 identity marker bytes (as `web/fm1pkg.js logicalImage()` does),
+2. decrypt the ufw entry list at `0x40` (ENC, key `0xFFFF`),
+3. take `flash.bin` from the first entry (`0x400`),
+4. decrypt the app area at `0x4000` (SFC, key `0x980F`, mixed with the block address),
+5. the app is `0x120` into that area, padded with `0xFF` to the slot.
+
+(The package identity is `FM-1_900` — worth knowing, because the kid build should carry a *different*
+product name so an installer list can never confuse the two; the plan's `FM-1_910` proposal is still
+the right idea.)
+
+Validation that the decoding is correct: the first four bytes come out `04 81 80 00`, which is exactly
+the entry stub `build.py` asserts on, and the version string `SLOOP 2.8.5` appears at offset 561,710.
+
+| | bytes | of the slot |
+| --- | ---: | ---: |
+| **Image actually used** | **571,820** | **98.3 %** |
+| **Headroom in the stock 2.8.5 build** | **9,744** | 1.7 % |
+| App slot (`APP_SLOT`) | 581,564 | 100 % |
+
+Three consequences, all of which change earlier assumptions in this document:
+
+1. **The plan's premise was stale.** §2 said the build "only links because it falls back to a text boot
+   logo". It does not: the shipped image **contains the bitmap splash** (its 4,635 B RLE blob is at
+   offset 542,563). The 2.7-era "the flash is full" note is still true as *history* — the console was
+   cut to make room then — but 2.8.5 currently has ~9.7 KB spare.
+2. **There is 14.4 KB available before cutting anything.** 9,744 B now, plus 4,635 B if the kid build
+   settles for the text logo that `build.py` already knows how to make. The kid mode was budgeted at
+   8–12 KB. **It therefore fits without removing a single feature** — no sample-set cut, no
+   fork-specific golden baseline, no preset renumbering.
+3. **Anything that does need trimmming comes from the small pool**, not the sample bank: the editor's
+   three cuttable pages (~1.3 % of code) plus string trimming.
+
+A second, independent read on the same data: the source-literal count (§4) plus the measured constant
+data (§2) predicts 571,820 B to within about 1 %, which is a useful cross-check on the host-proxy
+estimates in §3.
+
+**Self-check for your own build:** a stock `./build.sh` on 2.8.5 should print `image 571820 B`. If it
+prints something else, the generated headers differ (fonts, samples, or the Pillow version) and every
+delta measured from that baseline shifts with it.
 
 ## 3. Where the code is (ranking only)
 
@@ -197,20 +273,22 @@ tolerates that easily.
 
 ## 5. What this does to the plan
 
-Recommended order of attack for the space, now that the numbers exist:
+Revised with the real headroom (9,744 B, plus 4,635 B if the text logo is acceptable = **14.4 KB**):
 
 | Priority | Move | Gives | Costs |
 | --- | --- | --- | --- |
-| 1 | Cut sample sets **FLUTE + SCRCH** in the kid build | **+22.9 KB** | 2 presets; own golden baseline; graduation at level 10 |
-| 2 | Cut `editor_live.c` + `editor_fm6.c` + `editor_dsyn.c` (editor remote-control and patch pages) | ~1.3 % of code (~4 KB on device) | nothing she uses; you keep backup / restore / piano roll |
-| 3 | Cut `punch.c` | ~1.2 % of code | 27 punch-in FX — but they are level 6's fun, so do this last |
-| 4 | Add **HORNS** to the cut sets | +15.4 KB | 1 preset |
-| — | ~~arranger~~ | 0.3 % | not worth it — remove from the candidate list |
-| — | ~~`FELUCCA_CDC`~~ | already out since 2.7 | — |
+| 0 | **Build kid mode lean and see if it fits** | up to 9,744 B available today | nothing |
+| 1 | Text logo instead of the bitmap splash (one flag, automatic) | +4,635 B | the pretty boot picture — and she gets a nicer one in the graduation build |
+| 2 | `editor_live.c` + `editor_fm6.c` + `editor_dsyn.c` (editor remote-control and patch pages) | ~1.3 % of code (~3–4 KB) | nothing she uses |
+| 3 | Trim mission strings (the curriculum's screen text) | 0.5–1 KB | wording work |
+| — | ~~cut sample sets~~ | was the plan's main lever (34.4 KB for FLUTE+SCRCH, as measured) | **no longer needed.** Cutting sets renumbers SAMPLE presets, which would break user presets and require a fork-only golden baseline — a real cost for space we do not need |
+| — | ~~cut `ui_studio.c`~~ | — | it is the device's TRACKS/DRUMS screens; never |
+| — | ~~cut the arranger~~ | 0.3 % | not worth it, and not flag-able today |
 
-With (1) alone the plan's ~12 KB requirement is met twice over, which means **the risky part of the
-project is now the UI work, not the flash.** That changes the risk table: the flash risk drops from
-"medium-high" to "low", and the schedule risk (evenings, playtests) becomes the top risk.
+**So the flash risk is retired, not just downgraded**, and the graduation stops being a necessity. It is
+still a good ending (she moves to a maintained stock build with everything unlocked, keeps her projects
+and presets), but the kid build no longer *has* to be smaller than stock. That is the user's call, not a
+constraint — see `KID-MODE-HANDOFF.md` §2.
 
 ---
 
@@ -228,7 +306,10 @@ the new files listed by `git status`.**
 
 ---
 
-## 7. What still needs your machine (10 minutes of setup, ~15 minutes of building)
+## 7. What still needs your machine (optional now, but useful)
+
+The image size is answered above. What a real build still gives you is the **per-flag** deltas for the
+cuts in §5, and a check that your generated headers match the shipped ones.
 
 ```sh
 tools/get_toolchain.sh                     # ~/.jieli/toolchain  (JieLi's server)
@@ -241,10 +322,9 @@ tools/measure_flash.sh                     # + UAC, UART, icons, combined, CDC  
 ```
 
 It writes `build/measurements.md` with a row per variant (image bytes, delta, RAM, pool headroom) and
-prints the exact data-blob sizes next to it. **Sanity check built into the script:** the
-`cdc_built` row should read **6,000–8,000 B**, because SLOOP 2.7 recorded the USB console as "its
-6–8 KB: the flash is full". If it lands there, the flag plumbing and the measurement are honest. If
-it does not, trust the numbers less and tell me.
+prints the exact data-blob sizes next to it. Two checks are built in: the baseline row should read
+**571,820 B** (the decoded figure above), and the `cdc_built` row should read **6,000–8,000 B**, because
+SLOOP 2.7 recorded the USB console at "its 6–8 KB: the flash is full" when it was cut.
 
 What I expect (and want to be wrong about): baseline at or within a few KB of 581,564 with the text
 logo already in play, `logo_text` at 0 delta (already spent), `no_icons` in the low hundreds of bytes, `no_uac` a few KB. If `logo_text` reads
@@ -258,9 +338,12 @@ build's flag set.
 ## 8. Reproducing the host-side numbers
 
 ```sh
-tools/measure_code.sh        # builds 3 host proxies, prints the module ranking
+tools/measure_code.sh                  # builds 3 host proxies, prints the module ranking
+python3 tools/measure_samples.py       # the sample-bank table in §2, from the generated header
+python3 tools/measure_samples.py --cut FLUTE,SCRCH   # what that cut would free
+python3 tools/decode_fwsc.py docs/firmware/sloop-2.8.5.fwsc   # image size + free flash, no SDK
 ```
 
-The sample-set attribution is a 20-line script over `build/gen/felucca_samples.h` (zone offset + length
-per set, de-duplicated for shared zones); it is deterministic and needs no build. If it becomes a
-recurring question, it should become `tools/measure_samples.py` — say the word and I will add it.
+`measure_samples.py` reads `build/gen/felucca_samples.h`, which is checked in, so it needs no audio
+sources and no build. `decode_fwsc.py` needs only the package. Between the three, every number in this
+document can be re-derived on any machine.

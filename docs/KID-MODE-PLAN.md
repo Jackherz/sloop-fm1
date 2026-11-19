@@ -19,7 +19,7 @@ another agent without re-deriving anything.
 | Development hardware | **One unit now, second one likely** | Ordering the second FM-1 is the first action of the project, not a nice-to-have (§13, §14). Until it arrives, develop against the WASM preview. |
 | How much to hide | **Mixed: strict tutorial + free-play sandbox always open** | Needs the "two rooms" model below (§6): mission seeds must never be able to overwrite her own song. This is the biggest single addition to the design. |
 | Language | **English only** | One string table. Short, concrete words; the long explanations live on paper. |
-| Level 10 | **Graduation to stock SLOOP 2.8.5** (20 Nov) | The kid build may cut sample sets to pay for its code; she keeps projects and presets, and receives the held-back sounds as part of the ceremony. Removes the "maintain a reduced fork forever" problem. |
+| Level 10 | **Graduation to stock SLOOP 2.8.5** (20 Nov; rationale updated 20 Nov) | Originally chosen so the kid build could be smaller than stock. Measurement says it need not be — so this is now a **ceremony, not a necessity**: she keeps projects and presets and ends on a maintained upstream build with everything unlocked. |
 
 ---
 
@@ -88,7 +88,7 @@ This is the part that constrains everything, so it is worth being precise.
 | Screen | 240×240 ST7789, RGB565, **no framebuffer** — draws into a 240×124 strip (`gfx.c`) | No scrolling prose, no icons-with-captions. Two short lines max. Use `FONT_L` (16×32) for the mission line. |
 | Controls | 14 buttons (FX, SEL, ENV, LFO, EDIT, GLO, HOME, SAVE, ARP, SEQ, PLAY, REC, OCT−, OCT+), 7 encoders (SELECT, ALGORITHM, PRESETS, 4 knobs), 27 note keys (`panel.c`, `fm1_input.h`) | Everything advanced is a *hold-a-button* layer. That is the single biggest accessibility problem for a child, so kid mode must replace layers with visibility. |
 | Sound | 3 synth tracks + drums, 8 voices, 12 engines, 153 presets, 37 kits, 64 steps, 4 sections | Plenty of reward material to unlock — that is the upside. |
-| **Flash** | App slot is **581,564 B** (`tools/fm1pkg_make.py`), and the build only fits because it falls back to a **text boot logo** (`tools/build.py` line 341: "the flash is full"). The USB console was cut for the same reason: "its 6–8 KB: the flash is full" (`felucca.c`). | **This was the hard constraint — now measured.** ~54 % of the image is constant data and 283 KB of it is the sample bank; cutting two sample sets buys 22.9 KB. See `docs/KID-MODE-MEASUREMENTS.md`. |
+| **Flash** | App slot is **581,564 B** (`tools/fm1pkg_make.py`). History: the USB console was cut at 2.7 "because its 6–8 KB: the flash is full" (`felucca.c`), and `build.py` ~341 still has an automatic text-logo fallback on link overflow — so the codebase *expects* to be tight. | **Measured, and not the constraint it looked like.** The shipped 2.8.5 image uses **571,820 B of 581,564 → 9,744 B free**, and it ships *with* the bitmap splash (so the text-logo trick is still unspent: 14.4 KB available in total). Kid mode was budgeted at 8–12 KB. See `docs/KID-MODE-MEASUREMENTS.md` §2b. |
 | RAM | 96 KiB region, 58–74 KB already used depending on branch; build fails if the pool headroom drops under 8 KiB (`build.py`) | Kid state and screens must be small and reused; no second framebuffer. |
 | Data flash | A/B sector pairs (`storage.c`). Free space is essentially **one 4 KiB sector** (0xFB000); USR4 samples take 80 KB. Settings copy has a **192-byte "side record"** (`ST_SIDE_MAX`) already used for theme + favourites. | Progress record goes in the existing side record — no new flash map, no risk to her samples/presets. |
 | Audio timing | Everything UI-side must stay out of the audio ISR; the main loop has a 5.8 ms budget per half-buffer | All kid logic lives in the main loop. Progress writes defer to "quiet", like autosave already does (`project.c autosave_tick`). |
@@ -138,7 +138,7 @@ Mixed model, by design:
 | **Make** | "kicks on 1 and 3, snare on 2 and 4" | predicate over the drum step lanes (they are already in RAM) | trivial |
 | **Change** | "close the filter while the loop plays" | "parameter moved during playback" witness | trivial |
 | **Keep** | "let 8 bars play with 3 parts unmuted" | bar counter + mute state | trivial |
-| **Show and tell** | "make a melody you like" | she presses OCT+ on the mission card | trivial, but honest |
+| **Show and tell** | "make a melody you like" | she presses SEQ on the mission card | trivial, but honest |
 
 Everything above reads state that already exists. **No audio analysis, no pitch detection, no
 recording buffer** — those would be expensive in code, RAM, and CPU headroom, and they would be the
@@ -188,19 +188,25 @@ Full detail, including the per-mission reward moments, in `KID-MODE-CURRICULUM.m
 |  [ DRUMMER ] [ BASS ] [ KEYS ] [ DRUMS ] |   <- the band, only unlocked parts lit
 |                                          |
 |  TONE     LEVEL    SPACE    ---          |   <- 4 knobs, plain-word labels
-|  OCT+ = hint   OCT- = back               |
+|  SEQ = hint    HOME = back               |
 +------------------------------------------+
 ```
 
 Rules that make it kind:
 
-- **Five active buttons, and only five:** PLAY, REC, OCT+ (hint / next), OCT− (back), HOME (switch
-  between the MISSION room and the SANDBOX room — see below). Every other button answers with one
-  line — "NOT YET · LEVEL 6" — and never silently does something unexpected.
+- **Four active buttons on a card, and only four:** PLAY, REC, `SEQ` (hint / next), `HOME` (back, and
+  switch between the MISSION room and the SANDBOX room), plus `EDIT` = undo while a card is up. On the
+  *instrument* screens almost nothing is intercepted — locked things are simply absent, and HOME is the
+  only hijacked key, because it is her exit. Every refusal reads as one line — "NOT YET · LEVEL 6" —
+  and never silently does something unexpected.
+- **`OCT−`/`OCT+` keep their musical meaning** (they are soft/hard drum hits and the arp octave; the
+  level-2 mission teaches them). Stealing them for navigation would teach a gesture that stops working
+  at graduation. The hint therefore lives on `SEQ`, which only opens the sequencer family — locked
+  until level 9, and never needed from a card.
 - **Contextual knob names.** KNOB 1–4 are relabelled per mission ("TONE", "WARMTH", "SPACE"). That is a
   4-string table per mission, a few dozen bytes each, and it removes the worst part of the machine:
   values called `P_ED_FLT` and `RESO` shown as `-64..63`.
-- **Hint always available.** OCT+ replays the mission's demo (a 1-bar seed) or shows the next line.
+- **Hint always available.** `SEQ` replays the mission's demo (a 1-bar seed) or shows the next line.
   There is no penalty for needing it, which is the whole point.
 - **The band row is the map.** As levels finish, DAZZ: DRUMMER lights, then BASS, then KEYS. By level 9
   she sees the four-piece band she built.
@@ -312,38 +318,35 @@ const data, and she can mangle any of them without touching her own saved song.
 
 ---
 
-## 8. The size budget (measured 19 Nov — see `docs/KID-MODE-MEASUREMENTS.md`)
+## 8. The size budget (measured — and the answer is comfortable)
 
-The slot is 581,564 B and the image sits within a few KB of it. The measurement session answered the
-question this section used to leave open: **the image is ~54 % constant data, and 283 KB of that is
-one thing — the sample bank.** So the space comes from data, not from UI surgery.
+**The stock 2.8.5 image uses 571,820 B of the 581,564 B slot: 9,744 B free.** It ships with the bitmap
+boot splash, so the text-logo fallback (4,635 B) is still in reserve. **Available: 14.4 KB. Needed:
+8–12 KB.** `docs/KID-MODE-MEASUREMENTS.md` §2b has the method (the package decrypts under the constant
+key in `fm1pkg_make.py`) and the validation.
 
-| Priority | Cut (kid build only) | Gives | What it costs her |
-| --- | --- | --- | --- |
-| **1** | sample sets **FLUTE + SCRCH** (2 of 8) | **+22,866 B** | two presets (`LOFI FLUTE`, `SCRATCH`) |
-| 2 | `editor_live.c` + `editor_fm6.c` + `editor_dsyn.c` (the *editor's* remote-control and patch pages — **not** `ui_studio.c`, which is the device's TRACKS/DRUMS screens) | ~1.3 % of the code (~4 KB on device) | nothing she uses; you keep backup / restore / piano roll |
-| 3 | `punch.c` (27 punch-in FX) | ~1.2 % of the code (~3–4 KB) | level 6's most fun reward — do this last, if ever |
-| 4 | sample set **HORNS** | +15,439 B | one preset |
-| — | ~~`FELUCCA_ARRANGER`~~ | only 0.3 % | **not worth it** — the plan's 2–4 KB guess was wrong |
-| — | ~~`FELUCCA_CDC`~~, ~~bitmap logo~~ | already spent in 2.7/2.8 | — |
+So the order is simply:
 
-With (1) alone the ~12 KB kid mode is covered twice over, so the flash risk is now **low** and the
-project's real risk is schedule and playtesting (see §14).
+1. **Build kid mode lean, target ≤ 8 KB, and see if it fits.** Most of the estimate is text, and text is
+   the easiest thing to trim.
+2. If it overflows: accept the text logo (+4,635 B, one flag, automatic).
+3. If it still overflows: cut the editor's three remote-control/patch pages (~3–4 KB).
+4. If it still overflows: trim mission strings. That is now the last resort, not the plan.
 
-Two consequences to plan for deliberately:
+What this **retires**:
 
-- Cutting sets renumbers the SAMPLE presets, so the fork gets **its own `tests/golden.txt`** baseline
-  (one reviewed `GOLDEN_UPDATE=1` run). Never for the stock build.
-- A kid build missing presets cannot hand her "everything" at level 10. **Decided 20 Nov: level 10 is a
-  graduation** — install stock 2.8.5, keep her projects and presets (the formats are shared), and hand
-  her the held-back sounds as part of the ceremony. That removes the "maintain a permanently reduced
-  fork" problem, gives the course a proper ending, and means the kid build's own golden baseline only
-  has to be maintained until Christmas.
+- ~~Cutting sample sets.~~ Measured properly, FLUTE+SCRCH is worth 34.4 KB — the plan's main lever.
+  It is not needed, and it has real
+  costs: cutting sets renumbers the SAMPLE presets, which breaks user presets she saves later and
+  forces a fork-only golden baseline. **Leave the sample bank alone.**
+- ~~`ui_studio.c`.~~ It is the device's TRACKS/DRUMS/LAYERS screens, not the editor's LIVE page.
+- ~~The arranger.~~ 0.3 % of code, and not flag-able without edits to `ui_song.c`.
 
-**Still to fill in on your machine** (one command, §7 of the measurements doc): the baseline image size
-and the exact per-flag deltas, plus a built-in sanity check — `FELUCCA_CDC=1` should measure 6–8 KB,
-because 2.7 recorded the USB console at that figure. Until that lands, treat the code-side numbers
-above as shares, not KB.
+**What happens to the graduation (decided 20 Nov, rationale now changed):** it was chosen because the
+kid build would have to be smaller than stock. It does not. The graduation is therefore **optional** —
+still a nice ending (she moves to a maintained stock build with everything unlocked, keeping her
+projects and presets), no longer a necessity. Keeping it costs nothing and gives the course a proper
+finish; dropping it costs nothing either. Recommendation: keep it as ceremony.
 
 ## 9. Paper, not pixels: the kit and the mission generator
 
@@ -364,8 +367,8 @@ a second codebase, or a version-skew bug.
 | --- | --- |
 | 30 mission cards | level colour, 2-line instruction, "what to listen for", a tick box |
 | Band passport (A5, folded) | one page per level: sticker space, "what I learned", "what I made" |
-| Button-label stickers | printed names over the cryptic ones: SEL → SOUND, GLO → SETUP, OCT → OCTAVE, ALGORITHM → WHICH PLAYER |
-| Cheat card (taped under the unit) | the five buttons, the grown-up combo, the rescue combo |
+| Button-label stickers | printed names over the cryptic ones: SEL → SOUND, GLO → SETUP, SEQ → HELP, ALGORITHM → WHICH PLAYER (leave OCT−/OCT+ labelled: they *are* octave/soft-hard, and she will use them) |
+| Cheat card (taped under the unit) | the four buttons (`PLAY`, `REC`, `SEQ`, `HOME`) plus `EDIT`, the grown-up combo, the rescue combo |
 | A note from you | why you made it, what you love about her playing |
 
 **Still true from the firmware side:** `build/preview/sloop-preview.wasm` exists and lets you click
@@ -444,9 +447,9 @@ plus M-UPGRADE's stock `FM-1.fwsc` (V16) on the same laptop you will use on Chri
 
 | When | What | Done when |
 | --- | --- | --- |
-| **Nov 19–25** | **Order the second FM-1 (first action).** Toolchain + SDK; build and install stock 2.8.5 on a dev unit; run the full test suite. Measure done on the host side (22 tests green, data blobs and sample bank accounted, `docs/KID-MODE-MEASUREMENTS.md`); **remaining: `tools/measure_flash.sh` on your machine for the image size and flag deltas.** Write all 30 missions here, on paper, before any UI code — and build the mission table + card generator. | `build/measurements.md` exists with a row per variant; the curriculum is frozen and printable. |
+| **Nov 19–25** | **Order the second FM-1 (first action).** Toolchain + SDK; build and install stock 2.8.5 on a dev unit; run the full test suite. The size question is answered offline (571,820 / 581,564 B — `docs/KID-MODE-MEASUREMENTS.md` §2b), so `tools/measure_flash.sh` is now a *confirmation* when the toolchain is up, not a gate. Write all 30 missions here, on paper, before any UI code — and build the mission table + card generator. | Stock build prints `image 571820 B`; `build/measurements.md` has a row per variant; the curriculum is frozen and printable. |
 | **Nov 26–Dec 2** | Kid shell: gate function, progress record, clubhouse screen, parent menu, 4 active buttons; levels 1–2 (6 missions). | You can play levels 1–2 on the device without touching a documentation file. |
-| **Dec 3–9** | Levels 3–10, seeds, witnesses/predicates, badges, jingle, hint lines; size fight; strings pass (short, plain, caps). | All 30 missions reachable and completable. |
+| **Dec 3–9** | Levels 3–10, seeds, witnesses/predicates, badges, jingle, hint lines; image-size check (expect it to fit — 9.7 KB spare); strings pass (short, plain, caps). | All 30 missions reachable and completable. |
 | **Dec 10–16** | **The playtest week.** A real 10-year-old, twice, 20 minutes each, video the screen. Fix what she ignores, misreads or finds boring. Accessibility pass; safety pass; backup/restore. | Two playtests done, top five confusions fixed. |
 | **Dec 17–19** | Freeze. Build `9.0-kid`, install on the gift unit, preload 2 demo songs (one yours), set colours/lights, print cards + passport + stickers, pack. | Box closed. |
 | **Dec 20–24** | Buffer, and the fallback if something broke. | — |
@@ -462,9 +465,9 @@ Dec 24.
 
 | Risk | Likelihood | Mitigation |
 | --- | --- | --- |
-| Kid mode does not fit in flash | **Low** (was medium-high) | Measured: cutting two sample sets is worth 22.9 KB vs a ~12 KB need. Fallbacks still exist (LIVE page ~4 % of code, punch 1.2 %) |
-| The fork drifts from upstream because it cut sample sets | Medium | Own golden baseline, kid build only; level 10 graduates her to stock SLOOP; never cut anything in the stock build |
-| She finds the layer/hold model confusing anyway | Medium | Only 4 active buttons in kid mode; playtest in week 4; paper cards as backup |
+| Kid mode does not fit in flash | **Retired** | Measured: 9,744 B free, 14.4 KB with the text logo, against an 8–12 KB estimate. Three fallbacks before anything she uses is touched |
+| The fork drifts from upstream | **Low** | No sample sets cut, so the preset bank is identical to stock and the same `tests/golden.txt` applies. Kid files are separate and the audio path is frozen |
+| She finds the layer/hold model confusing anyway | Medium | Four buttons plus `EDIT` in kid mode; playtest in week 4; paper cards as backup |
 | Playtest impossible (no child available) | Medium | Sit with the rules for 10 minutes as if you were 10; watch where *you* hesitate; ask a friend's kid for 20 minutes — this is worth a phone call |
 | Gift unit has the newer flash chip | Low (fixed in 2.8.5) | Build on ≥ 2.8.5 and test SAVE on the actual unit |
 | Second FM-1 arrives late, or not at all | High (single unit today) | Order in week 1; preview for layout until it lands; hard fallback on 10 Dec = develop on the gift unit and reflash before wrapping |

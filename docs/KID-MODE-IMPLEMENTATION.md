@@ -102,11 +102,12 @@ y  40..74   FONT_S instruction, 2 lines
 y  76..132  the band row: 4 tiles (DRUMS / BASS / KEYS / LEAD), lit = unlocked
 y 134..176  the mission strip: dots for this level's 3 missions (done / current / locked)
 y 178..202  four knob labels, each in its track colour (FONT_S)
-y 204..238  two hints: "OCT+ HINT"   "HOME: FREE PLAY"
+y 204..238  two hints: "SEQ: HELP"   "HOME: FREE PLAY"
 ```
 
 Two knobs of headroom: `Y_FOOT` in `ui.c` is 202 and the existing screens use 240−202 = 38 px for the
-footer, so this layout matches the house style.
+footer, so this layout matches the house style — and the footer is where the button reminder goes
+(`SEQ: HELP` · `HOME: FREE PLAY`), because a card is read once and a footer is read every time.
 
 ---
 
@@ -125,18 +126,40 @@ before `page_fix()`/`midi_entry()`:
 if (kid_mode && kid_input(pressed, notes, home)) { ui.force |= kid_dirty; return; }
 ```
 
-with `kid_input()`:
+`kid_input()` then has two different jobs, and they must not be confused:
 
-| input | kid mode behaviour |
+**(a) A kid-owned screen is up** (clubhouse, mission card). Nearly every button is free here, so use them:
+
+| input | behaviour |
 | --- | --- |
-| PLAY / REC | pass through to the existing handlers (they are already safe) |
-| OCT+ / OCT− | hint ladder step / back — intercepted, never the octave function |
-| HOME tap | switch MISSION ↔ SANDBOX room |
-| HOME hold 3 s | parent menu (see §8) |
-| ALGORITHM | cycle only unlocked tracks |
-| SELECT / PRESETS / knobs 1–4 | pass through, but labels come from the mission's `knob[4]` |
-| any other button | refused with `NOT YET · LEVEL n` |
+| `SEQ` tap | **HINT** — next hint line, replays the seed, then offers SKIP (§ curriculum "hint ladder") |
+| `HOME` tap | back to the clubhouse / switch MISSION ↔ SANDBOX |
+| `HOME` held 3 s | parent menu (§8) |
+| `EDIT` tap | **UNDO** (one button — the child-facing version of stock's chord) |
+| `PLAY` | start/stop the song, as stock |
+| everything else | `NOT YET · LEVEL n` |
+
+**(b) An instrument screen is up** (she is playing; gating is by omission through `page_shown()`, not by
+interception). Intercept as little as possible:
+
+| input | behaviour |
+| --- | --- |
+| `HOME` tap | back to the clubhouse (this is her only exit, so it must always work) |
+| `HOME` held 3 s | parent menu (§8) |
+| `ALGORITHM` | cycle only unlocked tracks |
+| knobs 1–4 | pass through; on a mission screen the labels come from the mission's `knob[4]` |
+| locked buttons/pages | disappear via `page_shown()`, not a refusal — the `NOT YET` message is for the card |
+| **`OCT−` / `OCT+`** | **never intercepted.** They are the drum track's soft/hard hits and the arp octave — i.e. the instrument. The level-2 mission "hold OCT− for soft" teaches exactly this, and a gesture that changes meaning after graduation is a trap |
+| **`EDIT`** | **never intercepted here**: it opens the editor pages from level 5, and undo here is stock's hold-`EDIT`-then-`OCT−` (§14) |
 | note keys | pass through (always sound — never muted by gating) |
+
+**Why the hint is not on `OCT+`** (it was, in the first draft): `OCT+`/`OCT−` are *musical* on two of the
+four tracks, and the device label says so. `SEQ` only opens the sequencer family, which is locked until
+level 9 anyway, and on a kid screen it is not needed at all.
+
+**The stock hold threshold is 700 ms, not 3 s** (`btn_hold()`, `ui_input.c` ~765:
+`700u * 1000u * FM1_TICKS_PER_US`). A 3 s parent-menu hold therefore needs its own timer field
+(`ui.kid_t0`), not `btn_hold()` with a bigger number — that function has no duration parameter.
 
 **Trap:** `ly_lock` (a locked layer, `ui_input.c` ~836 `layer_unlock`) and `ui.hold_kind` confirmations
 already intercept input. Kid mode must clear both on entering a mission, or the first keypress gets
@@ -279,10 +302,14 @@ Total new code ≈ 1,000 lines + 3 KB of strings. In the measured terms of this 
   ignored; that trap cost time during the measurement session).
 - **Identity:** `FELUCCA_ID "FM-1_910"`, version string `SLOOP JR 1.0`, package name
   `sloop-jr-1.0.fwsc`, so it can never be confused with stock in an installer list.
-- **Paying for it (measured):** cutting sample sets FLUTE + SCRCH in `tools/gen_samples.py`
-  (`CC0_SETS`, ~47) frees 22,866 B of `SMP_DATA` for two presets. That alone covers the 8–12 KB.
-  Consequence: the kid build gets its **own** `tests/golden.txt` (one reviewed `GOLDEN_UPDATE=1` run)
-  and level 10 becomes the graduation to stock 2.8.5.
+- **Paying for it (measured 20 Nov — nothing needs cutting):** stock 2.8.5 uses 571,820 B of the
+  581,564 B slot, so there are **9,744 B free**, and the bitmap splash is still in the image, so `FELUCCA_LOGO_TEXT=1`
+  adds 4,635 B more: **14.4 KB against an 8–12 KB estimate.** If the kid build overruns, go
+  text-logo first, then cut the editor's LIVE/FM6/DSYN pages (§ plan §8). **Do not cut sample sets** —
+  it buys room we do not need, renumbers the SAMPLE presets, and forces a kid-only `tests/golden.txt`.
+- **Check the size without a toolchain:** `python3 tools/decode_fwsc.py PKG.fwsc` prints the image and
+  the free bytes for any package (`docs/KID-MODE-MEASUREMENTS.md` §2b), and a stock build must print
+  `image 571820 B`.
 - **Installer:** a separate page under `web/` built by `web/make_site.py`, branded, with one button.
   Do not host it on the public SLOOP page.
 
@@ -305,11 +332,16 @@ UI functions) and `tests/knob_walk_test.c` (which enumerates every page):
 5. **Predicates.** For each check type, feed a synthetic witness sequence and assert complete /
    not-complete at the boundary (this is where the curriculum's "≥" off-by-ones live).
 6. **No audio change.** Run the existing `tests/regress.c` in the same suite; `tests/golden.txt` must
-   be untouched for the *stock* configuration.
+   be untouched for the *stock* configuration — with no sample cuts the kid build shares it, which is a
+   free regression net the earlier plan had to give up.
+7. **Image size (per build, printed by `build.py`).** Stock must read **571,820 B**; the kid build must
+   stay under **581,564 B** *without* `FELUCCA_LOGO_TEXT` — if it only fits with the text logo, that is a
+   budget overrun to look at, not a success.
 
-On device (manual checklist, printed): all five buttons, a full level 1–3 playthrough, save/load a
-section, the parent menu, a power cycle mid-mission, and a stock-SLOOP reinstall to prove her files
-still open.
+On device (manual checklist, printed): the four buttons she uses (`PLAY`, `REC`, `SEQ`, `HOME`) plus
+`EDIT`, a full level 1–3 playthrough, save/load a section, the parent menu, a power cycle mid-mission,
+a stock-SLOOP reinstall to prove her files still open, and one deliberate mistake to check that she can
+find the undo (`EDIT` on a card, hold `EDIT` + `OCT−` on an instrument screen).
 
 ---
 
@@ -322,7 +354,7 @@ still open.
 | 3 | `kid_test.c` gate matrix | 2 | fixes the progression table in code, not in prose |
 | 4 | Progress record in the side record + parent menu reset | 2 | so testing a level twice is easy |
 | 5 | Two rooms (snapshot/restore) | 2, 3 | everything else assumes it |
-| 6 | Clubhouse screen + the five buttons + the refusal line | 3, 4 | first thing a child can actually touch |
+| 6 | Clubhouse screen + the button map (§4) + the refusal line | 3, 4 | first thing a child can actually touch |
 | 7 | Witnesses + predicates + seeds for levels 1–2 (6 missions) | 5, 6 | a playable slice to test the feel with |
 | 8 | **Playtest #1** with a real 10-year-old, 20 minutes | 7 | before writing 24 more missions |
 | 9 | Missions 7–30, one level at a time, with a playtest after level 4 and level 8 | 7 | content is cheap to change before it is a system |
@@ -347,7 +379,24 @@ still open.
 - Font advance is proportional: budget 26–30 characters per line at `FONT_S`, then check on hardware.
 - Cutting sample sets renumbers SAMPLE presets: her saved projects keep engine+preset indices, so cut
   them **before** she starts, not after.
-- `FELUCCA_LOGO_TEXT` fallback is automatic; if the kid build overflows, the build silently shrinks the
-  logo instead of failing, which can hide the problem for weeks. Watch the printed image size.
+- `FELUCCA_LOGO_TEXT` is an **automatic fallback on link overflow** (`build.py` ~341: it catches
+  `overflow` in the linker output, sets the flag and rebuilds). So an overrun does not fail the build — it
+  silently trades the boot picture for a text logo. Watch the printed image size, and note that the
+  fallback is the *first* thing the budget spends, not a last resort.
 - A child pressing PLAY while a mission loads is the normal case, not the edge case: every load path
   must stop the transport first.
+- **Undo is a two-button chord and there is only one undo slot.** `ui_input.c` ~949: `held == LY_ERASE`
+  (EDIT) *and* `OCT−`/`OCT+`, edge-detected; the `undo` struct keeps **one step, not per-track**. So
+  (a) it cannot rescue an accidental NEW LOOP, which is why `G_NEWPRJ` must be *absent* rather than
+  guarded, and (b) the safety mission has to spell the chord out, because a child will not discover it.
+- **`OCT−`/`OCT+` are instrument controls, not navigation.** On the drum track they are soft/hard hits
+  (`core.h` ~203), on the arp they are the octave. Stealing them for "hint" teaches a gesture that
+  vanishes at graduation. The hint went to `SEQ` on kid screens instead.
+- **Drum lanes are not kick/snare/hat.** `drums.c` ~85, white keys F3 upward:
+  `KICK, KICK 2, SNARE, CLAP, HAT, OPEN HAT, PEDAL, RIM, SNARE 2, LOW TOM, HI TOM, CRASH, RIDE, SHAKER,
+  CONGA, COWBELL`. So "kick and snare together" is the 1st and 3rd white keys, not the 1st and 2nd —
+  mission copy and any witness check on lane index must use the real order.
+- **`·` is safe in `FONT_S`** (index 151, 2 ink pixels, 8 px advance), so the `KICK·SNARE` notation the
+  cards use really renders. `-`, `:`, `/`, `!`, `?` and `'` are all 8 px too.
+- `G_NEWPRJ` calls `project_new()` with no confirmation and only refuses while the song plays
+  (`ui_input.c` ~600). Omit it from kid mode; do not try to intercept it after the fact.
