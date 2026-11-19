@@ -284,7 +284,7 @@ Nothing to download or compile. Your projects, user presets, samples and setting
 ### Other ways
 
 - **Python:** the `.fwsc` of a [release](../../releases) with `python tools/fm1_install.py sloop-2.4.fwsc` (needs `pip install mido python-rtmidi`).
-- **Build it yourself:** see [Building and tests](#building-and-tests); on Windows, `INSTALL-SLOOP.bat` builds SLOOP and opens the installer locally.
+- **Build it yourself:** see [Building and tests](#building-and-tests); on Windows, `INSTALL-SLOOP.bat` builds SLOOP and opens the installer locally; on a Mac, [INSTALL-MAC.md](INSTALL-MAC.md) goes from the build to the FM-1, the SLOOP JR build included.
 
 ### Going back
 
