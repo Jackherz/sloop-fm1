@@ -119,12 +119,21 @@ footer, so this layout matches the house style — and the footer is where the b
 pressed = fm1_input_edges(0);  notes = fm1_input_note_edges();  home = btn_hold(&ui.home_t0, B_HOME, now, 1);
 ```
 
-Insert the kid handler **before the `if (home == BT_HOLD)` block** (which opens the HOME menu) and
-before `page_fix()`/`midi_entry()`:
+**Corrected 20 Nov (finding 31 in `KID-MODE-STAGES.md`): do not insert it before the HOME block.** The
+two lines between the HOME block and the menu are bookkeeping that the audio ISR depends on — in
+particular `kb_grid` (`ui_input.c:1132`), which decides whether the white keys are drum sounds or grid
+steps (`seq.c:2257`). Early-return before it, with `kb_grid` left at its last value, and the keys go
+silent the moment a mission follows a visit to the DRUMS grid page. So:
 
 ```
-if (kid_mode && kid_input(pressed, notes, home)) { ui.force |= kid_dirty; return; }
+    page_fix(); ... midi_entry();                       /* unchanged */
+    kb_grid = (uint8_t)grid_keys_on();                  /* 1132: must run on every pass */
+    if (home == BT_HOLD && !kid_on()) { ...open the menu... }      /* 1120, now guarded */
+    if (kid_on() && kid_input(pressed, notes, home)) { ui.force |= kid_dirty; return; }
+    if (ui.menu) { ... }                                /* unchanged */
 ```
+
+`kid_input()` gets `home` from line 1107, so nothing else has to move.
 
 `kid_input()` then has two different jobs, and they must not be confused:
 
@@ -412,6 +421,16 @@ written after a code sweep that found two ways to lose her work.**
   cards use really renders. `-`, `:`, `/`, `!`, `?` and `'` are all 8 px too.
 - `G_NEWPRJ` calls `project_new()` with no confirmation and only refuses while the song plays
   (`ui_input.c` ~600). Omit it from kid mode; do not try to intercept it after the fact.
+- **A page gate is not a gate.** The layer holds (SAVE+key stores sections, EDIT+key erases, GLO+keys
+  mute) live in `ly_bit[]` and run in the audio ISR; REC held clears the track from the *raw* button bit;
+  MIDI REMOTE presses panel buttons. See `KID-MODE-STAGES.md` §1b (findings 21–23) before writing the
+  gate.
+- **Never early-return before `kb_grid = grid_keys_on()`** (`ui_input.c:1132`): the drums go silent when
+  a mission follows a visit to the grid page (finding 31).
+- **`FAM_BTN[]` zero-fills a missing entry** to `B_FX` (`ui_input.c:28`), so a new family needs its
+  initialiser in the same edit — C will not warn.
+- **Header messages are 24 bytes** (`ui.c:86`), and a kid screen that replaces the header hides them —
+  including the parent's UPDATE MODE countdown (finding 32).
 - **`page_first()` is gate-blind and `ui.page` is unbounded.** Hiding a family's first page makes
   `page_fix()` re-enter the gate every frame (`ui.c:103`, `:550`), and `cur_page()` indexes `PAGES[]`
   with no bounds check (`ui.c:96`). Gate `page_first()` too, and assert every family keeps a visible page.

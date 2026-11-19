@@ -58,6 +58,32 @@ it. Add pages to a **new** family, never to GLO.
 
 ---
 
+## 1b. Second sweep: the parts that are not pages at all
+
+The first sweep followed the page system. This one followed **raw button bits** — because the FM-1 gives a
+button three different meanings depending on how long it is held and what is held with it, and those
+paths do not consult `PAGES[]` at all. Ten more findings, and the first three are the worst in the whole
+document for the *experience* (a 10-year-old does exactly these things).
+
+| # | finding | sev | evidence | what happens | fix | stage |
+|---|---|---|---|---|---|---|
+| 21 | **The layer holds bypass the page gate completely** | S1 | `ui_layers.c:1-24` (the layer table), `:43` (`ly_bit[]`), `seq.c:153-163` (`layer_buttons()`/`layer_now()`) | Hold SAVE + key 5–8 = **store the loop over section A–D**; hold EDIT + key = **erase that sound/note**; hold GLO + keys = mutes/solo/fills; hold SEQ + keys = step editing, locks, fill conditions; hold ARP = rolls. None of it is a page. And the keys' half runs **in the audio ISR** from `fm1_in.buttons & ly_bit[l]`, so intercepting the press in `ui_input()` does nothing. | zero `ly_bit[l]` for every locked layer — that is the ISR's whole lookup table | S1 |
+| 22 | **REC held ~0.7 s clears the track, from the raw bit** | S1 | `ui_input.c:1026`, `:1038-1061` (`rec_down` reads `fm1_in.buttons`, not the consumed `pressed`) | A child resting a finger on REC wipes the track. It does mark undo first, but undo is one track and she will not know. Consuming the press in the kid handler does **not** stop it. | mask the bit for the hold path too (a `kid_btn_blocked()` check in `holds_input`), or gate `ui.hold_kind` | S1 |
+| 23 | **MIDI REMOTE can press any panel button** | S2 | `ui_input.c:1073-1101`, `fm1_remote_btn`; the code's own comment: "a let-go never coming: REC would clear a track" | With a controller on the REMOTE channel, CCs become SAVE/EDIT/REC presses — the same three dangerous holds, without touching the instrument. | kid mode sets `G_RMCH = 0` (REMOTE off) | S1 |
+| 24 | **REC on an empty pattern is a FREE TAKE, not grid recording** | S2 | `seq.c:1093-1110` (the comment), `track_empty()`, `rec_tempo` | The curriculum's level-1 "REC, THEN PLAY" assumes a tempo grid. On an empty pattern stock starts a *free take* (no tempo, no grid, up to 24 s). | kid mode forces `rec_tempo = 1` (TEMPO) — and note it is a **persisted** setting (bits 9–10 of `lights_word`) | S5 |
+| 25 | **A crash is a red hex screen for ten seconds** | S2 | `main.c:129-172` `fm1_fault()` | If a kid-build bug traps, the screen goes red with vector/PC/SP hex for 10 s, then reboots. To a child that is a broken present. | do not remove the diagnostic (it is the parent's only evidence); put "red screen = photo it, then off and on" on the card | S3 |
+| 26 | **Rapid power cycling does *not* trip the boot guard** | — | `main.c:384` (`bootguard_clear` only on a real power-on, not a watchdog/soft reset) | **Verified non-issue**, recorded because it looks alarming: only *warm* resets escalate (two → recovery via `bootguard_begin`, `bootguard.h:16-26`). Switching off and on is safe. | — | — |
+| 27 | **A missing `FAM_BTN[]` entry silently means `B_FX`** | S2 | `ui_input.c:28-29`; `B_FX` is 0 in `panel.c:9` | Add `FAM_KID` to the enum and forget the initialiser, and the family is reached by the FX button instead of HOME. C zero-fills the missing entry; it does not fail to compile. | extend the array in the same edit; a static assert on `sizeof FAM_BTN` is free | S3 |
+| 28 | **Header messages are capped at 24 bytes** | S3 | `ui.c:86` `char msg[24]`, `ui_say()` | "NOT YET · LEVEL 6" fits (17), "HOLD EDIT, THEN OCT-" fits (21). A longer mission hint silently truncates. | keep every `ui_say`/`ui_message` under 24 and let the card carry the rest | S3 |
+| 29 | **The button LEDs default to OFF** | S3 | `panel.c:146-156` (`settings_init` sets palette/lowcut/zoom, not lights); `lights_word()` bit 0–3 | A fresh unit has no background glow on the buttons. Not a bug, but it is half of "this looks like a toy that lights up". | set `LIGHTS_LOW` and a key-light mode once in the gift build's settings | S11 |
+| 30 | **Every `ui.force` is a full 240×124 blit** | S3 | `ui_draw.c:52-120`, `gfx.c:184-215` (one canvas, three bands) | A kid screen that raises `ui.force` while it animates redraws the strip and the footer every frame: CPU, battery, and a flicker risk that is invisible on a desk. | redraw on state change only; measure with the CPU readout on the SYSTEM page | S3 |
+| 31 | **An early return before `kb_grid` makes the keys silent** | S1 | `ui_input.c:1132` (`kb_grid = grid_keys_on()`), `seq.c:2257` (`is_drum && layer == LY_PLAY && kb_grid` → a step key, no sound), `ui_studio.c:515` | `kb_grid` is a **volatile** flag the audio ISR reads. Insert the kid handler "before the HOME block" as first written, and the refresh never runs while a kid screen is up — so the last value sticks. Come from the DRUMS grid page into a mission and every white key is swallowed as a step: the instrument goes silent and looks broken. | put the kid handler **after** line 1132 (it only needs `home`, computed at 1107) and guard the menu block with `!kid_on()`; or set `kb_grid = 0` inside the kid handler | S1 |
+| 32 | **Kid screens hide the messages, including the parent's** | S3 | `ui_draw.c:52-56` (`ui.msg` in the header), `main.c:296-306` (UPDATE MODE countdown via `ui_say`) | Every message — `NOT YET · LEVEL n`, "SAVED SECTION D", the update-mode countdown — is drawn by the stock header. A kid screen that replaces the header hides all of them, so the parent's countdown would be invisible and a save would look like nothing happened. | keep a 20 px header band on kid screens and draw `ui.msg` in it, exactly as the house does | S3 |
+
+**The shape this gives the gate** (revised in §2.2): pages, values, and raw bits. Three levels, and a
+button has to be blocked at all three or it is not blocked. Finding 31 is the reminder that the gate must
+also *not* skip the bookkeeping lines around it.
+
 ## 2. Decisions these force (changes to the other docs)
 
 ### 2.1 The snapshot is the autosave object, not section D
@@ -88,17 +114,33 @@ update or reset — if that runs mid-mission it must write **her** song, not the
 mission while `song.playing` must stop the transport first (an erase under a running transport is the
 one thing that glitches).
 
-### 2.2 The gate has two halves
+### 2.2 The gate has three levels, and a button must be blocked at all three
 
-Pages are not the only surface (finding 9). The value half has exactly four chokepoints:
+Pages are the smallest part of it. A kid build that only gates pages still hands a child SAVE + key
+(section store), REC held (clear track) and EDIT + key (erase), because those live in the layer table and
+in raw button bits (findings 21–23).
+
+**Level 1 — pages.** `page_shown()` plus `page_first()`/`page_fix()`, `open_family()`, the draw row.
+
+**Level 2 — values.** These are not pages and are reachable from an encoder, a MIDI message, or a
+project load:
 
 | what | chokepoint | gate |
 |---|---|---|
 | engine | `select_engine()` `ui.c:701` | engine id in the level's allowed set |
 | preset | `preset_go()` `ui.c:997` | list index mapped through an allowed list, not just clamped |
-| drum kit | `TDRUM->p[P_E0]`, three writers: `ui_input.c:1273`, `ui.c:977`, the parameter editor | `clamp(0, kid_kit_max())` at each writer |
+| drum kit | `TDRUM->p[P_E0]`: `ui_input.c:1275`, `ui.c:977`, `params.c:412` (`EDIT 1` KNOB 1) | `clamp(0, kid_kit_max())` at each writer |
 | track | `track_select()` `ui.c:1034` | skip tracks above `kid_track_max()` |
-| MIDI PC | `pc_poll()` `ui.c:964` | ignored while kid mode is on (simplest, and honest: the card says "no pedals or MIDI needed") |
+| MIDI PC | `pc_poll()` `ui.c:964` | ignored while kid mode is on |
+
+**Level 3 — raw button bits.** The ISR and the hold paths read `fm1_in.buttons` directly:
+
+| what | where | gate |
+|---|---|---|
+| every layer (FX, EDIT, ARP, SEQ, SEL, GLO, SAVE) | `seq.c:153-163` via `ly_bit[]` (`ui_layers.c:43`) | zero `ly_bit[l]` for locked layers; that is the entire lookup |
+| REC held = clear track | `ui_input.c:1026-1061` | a `kid_btn_blocked()` check beside `rec_down` |
+| free take buttons | `ui_layers.c:46-47` `ft_btn_mask`/`ft_drop_mask` | irrelevant once `rec_tempo` is forced, but mask them if not |
+| buttons over MIDI | `fm1_remote_btn`, `ui_input.c:1073-1101` | `G_RMCH = 0` |
 
 Deliberately **not** gated: `proj_apply()`/`proj_import()`. A project restore must reproduce what she
 made. If a restore could put a locked engine back, the gate would be lying about what she owns.
@@ -155,10 +197,10 @@ gift would still be good. Sizes are estimates from the measurement doc's shares;
 | | |
 |---|---|
 | **Goal** | Level 1 is a real level: no TOOLS page, no step editor, no locked engine or kit — and no way to get stuck. |
-| **Work** | `kid_gate.c` (or the top of `kid.c`): `kid_level()`, `kid_page_allowed()`, `kid_engine_allowed()`, `kid_kit_max()`, `kid_track_max()`. Wire into `page_shown()` (`params.c:459`), **`page_first()`** and `page_fix()` (`ui.c:103`, `ui.c:550`, finding 1 and 2), `open_family()`, the draw page row (`ui_draw.c:829`), `select_engine()`, `preset_go()`, the three `P_E0` writers, `track_select()`, and `pc_poll()`. |
-| **Exit** | The gate matrix test exists and passes for levels 1..10 with the level forced by a build-time `-DKID_LEVEL=n`. Manual: every front-panel button and every encoder, from every screen, at level 1 — nothing reaches a locked page, nothing sticks, nothing flickers. |
-| **Tests** | `tests/kid_test.c` test 1 (gate matrix) + a new test: **every family has ≥ 1 visible page at every level**, and `page_first()` returns a visible index for each. |
-| **Size** | ~600 B. |
+| **Work** | `kid_gate.c` (or the top of `kid.c`): `kid_level()`, `kid_page_allowed()`, `kid_engine_allowed()`, `kid_kit_max()`, `kid_track_max()`, `kid_btn_blocked()`. Wire in **all three levels of §2.2**: pages (`page_shown()`, `page_first()`, `page_fix()`, `open_family()`, the draw row), values (`select_engine()`, `preset_go()`, the three `P_E0` writers, `track_select()`, `pc_poll()`), and **raw bits** — zero `ly_bit[]` for locked layers, block the REC hold, force `G_RMCH = 0`; the handler goes **after** `kb_grid = grid_keys_on()` (`ui_input.c:1132`), not before the HOME block — see finding 31. |
+| **Exit** | The gate matrix test exists and passes for levels 1..10 with the level forced by a build-time `-DKID_LEVEL=n`. Manual: every front-panel button and every encoder, from every screen, at level 1 — nothing reaches a locked page, nothing sticks, nothing flickers, and holding SAVE/EDIT/REC/GLO/SEQ with keys down changes nothing. |
+| **Tests** | `tests/kid_test.c` test 1 (gate matrix) + a new test: **every family has ≥ 1 visible page at every level**, and `page_first()` returns a visible index for each. Plus a "button table" test: for each level and each physical button, hold it 2 s with a key down and with nothing else down, and assert the *allowed* set — the layer table and the REC hold are asserted here, not by hand. |
+| **Size** | ~900 B (the mask table is a few dozen bytes; the wiring is the cost). |
 | **Risk** | the first place a wrong gate becomes a stuck unit. Do the matrix test before the wiring, not after. |
 
 ### S2 — The progress record  (2 days)
@@ -178,6 +220,7 @@ gift would still be good. Sizes are estimates from the measurement doc's shares;
 |---|---|
 | **Goal** | She can see where she is and the four buttons work. |
 | **Work** | `FAM_KID` **appended** to `PAGES[]`; the three-band draw (§2.3); `kid_input()` inserted after `page_fix()`/`midi_entry()` and before `if (home == BT_HOLD)` (`ui_input.c:1120`); `SEQ` = hint, `EDIT` = undo, `HOME` tap = rooms, `HOME` held 3 s = parent (own timer — `btn_hold()` is fixed at 700 ms, `ui_input.c:765`); force `ui.menu = 0`, clear `hold_kind`/layer locks/`ui.home_t0` on entry (finding 13); `song.seq_mode = 0` on the kid page (finding 19); kid-mode handling of the UBOOT combo (finding 10). |
+| **Work (also)** | extend `FAM_BTN[]` in the same edit as the enum (finding 27); keep every header message under 24 bytes (finding 28); redraw on state change only (finding 30); **keep the 20 px header band and draw `ui.msg` in it** so the parent's messages and the update countdown are not hidden (finding 32). |
 | **Exit** | On the device: the screen is legible at arm's length, the four buttons do what the footer says, and a 5-minute button mash cannot leave the clubhouse or open a menu. |
 | **Tests** | kid test: input consumed map (a table of button → expected effect, driven through `kid_input()` directly). Manual: mash test, power-on test with palms on the panel. |
 | **Size** | ~900 B. |
@@ -199,7 +242,7 @@ gift would still be good. Sizes are estimates from the measurement doc's shares;
 | | |
 |---|---|
 | **Goal** | One table drives the device and the paper. A mission can be loaded, evaluated, completed, and remembered. |
-| **Work** | `docs/kid_missions.tsv` (source of truth) → `tools/gen_kid_missions.py` → `build/gen/kid_missions.h` + the printed cards. Seed expansion (`seed → proj_apply`), witnesses (the masks in the curriculum), predicates, completion, unlock, badge. REC disarmed and FREE TAKE refused while a mission is active (finding 18); seed load does not mark undo. |
+| **Work** | `docs/kid_missions.tsv` (source of truth) → `tools/gen_kid_missions.py` → `build/gen/kid_missions.h` + the printed cards. Seed expansion (`seed → proj_apply`), witnesses (the masks in the curriculum), predicates, completion, unlock, badge. REC disarmed and FREE TAKE refused while a mission is active (finding 18); **`rec_tempo` forced to TEMPO so level 1's "REC, then play" is a grid, not a free take** (finding 24); seed load does not mark undo. |
 | **Exit** | All 30 seeds expand and pass `proj_ok()`; a synthetic witness sequence completes each check at its boundary and not one step before; a mission left and re-entered resumes at the same state. |
 | **Tests** | kid tests 4 and 5, plus a "null mission" (complete = press SEQ) to prove the plumbing without content. |
 | **Size** | ~1,500 B + content (30 × ~120 B = 3.6 KB). |
@@ -257,9 +300,10 @@ Do not move on until these are true. They are cheap and they are all mechanical.
 | gate | check | after |
 |---|---|---|
 | G1 | stock build prints `image 571820 B`; 182 renders, 0 changed | S0, every stage after |
-| G2 | gate matrix test green for levels 1..10; every family has ≥ 1 visible page | S1 |
+| G2 | gate matrix test green for levels 1..10; every family has ≥ 1 visible page; **the button table passes** (no locked layer, no REC-hold clear, no REMOTE press) | S1 |
 | G3 | side-record round trip + stock 2.8.5 accepts a kid-written record | S2 |
 | G4 | 30 × "song survives a mission", 1 × "song survives a power cut" | S4 |
+| G4b | enter a mission **from the DRUMS grid page** with a drum track selected: the white keys still sound | S1/S3 |
 | G5 | all 30 seeds expand and pass `proj_ok()`; every predicate passes at its boundary | S5 |
 | G6 | kid image ≤ 581,564 B **without** `FELUCCA_LOGO_TEXT` | S9 |
 | G7 | stock 2.8.5 boots over her data with theme, favourites and projects intact | S8 |
