@@ -126,12 +126,13 @@ bytes** — pi32v2 `-Oz` is much tighter than this.
 | `voice.c` | 4.2 % | core |
 | `ui_vis.c` | **4.1 %** | full-screen visualiser — could go, but it is a great reward |
 | `ui_input.c` | 4.0 % | core |
-| `ui_studio.c` | **3.4 %** | the 2.7 LIVE show-control page — kid-irrelevant |
+| `ui_studio.c` | 3.4 % | **the device's own TRACKS / DRUMS / LAYERS / HOLD screens — the heart of the kid UI. Never cut.** |
 | `phys_dsp.c` | 2.6 % | level 8's engine |
 | `fm6_core.c` | 2.5 % | level 10 |
 | `punch.c` | **1.2 %** | 27 punch-in FX — fun, but cuttable |
 | `ui_menu.c` | 1.0 % | |
-| `editor_live.c` | 0.6 % | LIVE page support |
+| `editor_live.c` | 0.6 % | the *editor's* remote-control page (protocol v12) — cuttable |
+| `editor_fm6.c`, `editor_dsyn.c` | 0.7 % | editor-side patch/cartridge pages — cuttable |
 | `arranger_scene.c` | 0.3 % | song order |
 | `ui_song.c` | 0.5 % | |
 
@@ -139,8 +140,15 @@ Two things worth knowing that the plan guessed wrong about:
 
 - **The arranger is small** (0.3 %), not the 2–4 KB the plan assumed. Cutting it is not worth the
   feature loss; drop it from the candidate list.
-- **The LIVE page is the biggest kid-irrelevant block** (`ui_studio.c` + `editor_live.c` ≈ 4.0 %),
-  followed by the visualiser (4.1 %, but it is a reward, so keep it) and punch (1.2 %).
+- **Correction to an earlier assumption in this session:** `ui_studio.c` is not the editor's LIVE page.
+  It is the FM-1's own performance screens (TRACKS, the DRUM grid and kit, the layers, the HOLD
+  prompts) — the surface the whole kid experience sits on. The editor's LIVE page is
+  `editor_live.c` (0.6 %), which is small.
+- What is genuinely cuttable without touching anything she uses: `editor_live.c` + `editor_fm6.c` +
+  `editor_dsyn.c` (1.3 % together: the editor's remote-control page and the two patch-editing pages,
+  all parent tools), `ui_menu.c` (1.0 %, but the parent menu needs some of it) and `punch.c` (1.2 %,
+  which is level 6's reward, so it goes last). That is **~3 % of code, roughly 8 KB** — enough only if
+  the sample cut happens first.
 
 ---
 
@@ -163,7 +171,8 @@ firmware, every menu label and every message.
 A 30-mission curriculum at ~60 characters of on-screen text per mission is **~1.8 KB — about 11 % of
 every word in the firmware**. This is the argument for the paper kit, in one number: the long
 explanation has to live on cards, because the device's entire text budget is smaller than a page of
-A4. Write the missions short (≤ 2 × 18 characters) from the start.
+A4. Write the missions short (≤ 2 × 28 characters on screen; the measured line budget is in
+`KID-MODE-IMPLEMENTATION.md` §3) from the start.
 
 ---
 
@@ -193,7 +202,7 @@ Recommended order of attack for the space, now that the numbers exist:
 | Priority | Move | Gives | Costs |
 | --- | --- | --- | --- |
 | 1 | Cut sample sets **FLUTE + SCRCH** in the kid build | **+22.9 KB** | 2 presets; own golden baseline; graduation at level 10 |
-| 2 | Cut `ui_studio.c` + `editor_live.c` (LIVE page) | ~4 % of code (measure on device) | the show-control page (kid-irrelevant, you keep the rest of the editor) |
+| 2 | Cut `editor_live.c` + `editor_fm6.c` + `editor_dsyn.c` (editor remote-control and patch pages) | ~1.3 % of code (~4 KB on device) | nothing she uses; you keep backup / restore / piano roll |
 | 3 | Cut `punch.c` | ~1.2 % of code | 27 punch-in FX — but they are level 6's fun, so do this last |
 | 4 | Add **HORNS** to the cut sets | +15.4 KB | 1 preset |
 | — | ~~arranger~~ | 0.3 % | not worth it — remove from the candidate list |

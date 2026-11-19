@@ -6,7 +6,12 @@ tasks unlocks more of the instrument.**
 Status: planning only, no code written yet. Written 19 Nov 2026 — 36 days to Christmas.
 Base: `sloop-fm1` at 2.8.5 (`bac9c05`), GPL-3.0.
 
-**Decisions locked (19 Nov 2026):**
+**The package:** this plan is the design. `KID-MODE-CURRICULUM.md` holds the 30 missions as a build
+spec, `KID-MODE-IMPLEMENTATION.md` the engineering map (seams, gate, snapshot, tests, order of work),
+`KID-MODE-MEASUREMENTS.md` the numbers, and `KID-MODE-HANDOFF.md` the index. Written to be handed to
+another agent without re-deriving anything.
+
+**Decisions locked:**
 
 | Decision | Choice | Effect on this plan |
 | --- | --- | --- |
@@ -14,6 +19,7 @@ Base: `sloop-fm1` at 2.8.5 (`bac9c05`), GPL-3.0.
 | Development hardware | **One unit now, second one likely** | Ordering the second FM-1 is the first action of the project, not a nice-to-have (§13, §14). Until it arrives, develop against the WASM preview. |
 | How much to hide | **Mixed: strict tutorial + free-play sandbox always open** | Needs the "two rooms" model below (§6): mission seeds must never be able to overwrite her own song. This is the biggest single addition to the design. |
 | Language | **English only** | One string table. Short, concrete words; the long explanations live on paper. |
+| Level 10 | **Graduation to stock SLOOP 2.8.5** (20 Nov) | The kid build may cut sample sets to pay for its code; she keeps projects and presets, and receives the held-back sounds as part of the ceremony. Removes the "maintain a reduced fork forever" problem. |
 
 ---
 
@@ -57,8 +63,10 @@ not "synth tutorial", it is "**you are the bandleader of four players**".
 5. **Never a fail state.** No timers, no scores, no losing. Missions can be left half-done, undone,
    or done "wrong" — there is always UNDO, and nothing destructive happens without a confirmation
    (the firmware already does this).
-6. **Reward = more music.** A badge is a sticker; the real payoff is a new sound world or a new power
-   (filter, echo, arpeggiator) that she can immediately use on the loop she just made.
+6. **Reward = more music, not more tokens.** Expected prizes for things children already enjoy reliably
+   reduce their motivation, and the effect is strongest at her age; surprise and mastery do not. So the
+   unlock is a door she walks through, the band growing is the progress display, and there is never a
+   streak. See §5.
 7. **Ask for creative work honestly.** Some missions are machine-verifiable ("kick on beats 1 and 3");
    some cannot be ("write a melody you like"). Those use a *show-and-tell* key: she decides it is good,
    presses it, and the machine celebrates. Pretending to grade creativity is worse than admitting it.
@@ -110,7 +118,7 @@ three happen on Christmas morning.
 | 7 | **THE MELODY** | Lead part over her chords; scale-locked; then arpeggiate a chord. | ARP layer, lead presets | melody over harmony, sequence | scales she already practises |
 | 8 | **THE STRINGS** | PHYS engine: plucked string, bowed string (CELLO BOW), then sympathetic strings (SITAR/TANPURA). | PHYS + GRAIN + NOISE engines | physical modelling, resonance | **direct bridge: a double bass in a box** |
 | 9 | **THE COMPOSER** | Sections A–D, SONG order, save it, give it a name. Make a 2-minute piece: intro / A / B / A. | SEQ + SONG pages, saving | form, arrangement | playing a piece start to finish |
-| 10 | **THE INVENTOR** | FM6 (DX7-style) sound design; sample her own voice or her double bass into USR1 and play it on the keys. | FM6, SAMPLE, everything — and **graduation to stock SLOOP** if the kid build cut sample sets (§8) | synthesis families | her instrument as raw material |
+| 10 | **THE INVENTOR** | FM6 (DX7-style) sound design; sample her own voice or her double bass into USR1 and play it on the keys. | FM6, SAMPLE, everything — then **graduation to stock SLOOP 2.8.5** (decided 20 Nov; see §8) | synthesis families | her instrument as raw material |
 
 **Mission structure (3 per level):** `COPY` (match the example) → `CHANGE` (one thing, hear the
 difference) → `MAKE` (a tiny piece of her own). Roughly 3–5 hours of structured play across the term,
@@ -138,21 +146,31 @@ first things to glitch her audio.
 
 ---
 
-## 5. The reward system
+## 5. The reward system (revised after the research)
 
-Keep it physical and countable. Ten-year-olds are concrete: a thing they can point at beats a
-progress bar.
+The first draft of this section was a badge per level. The evidence says that is the risky pattern:
+**expected, contingent, tangible rewards for an activity a child already enjoys reliably reduce her
+intrinsic motivation**, the effect is strongest between roughly 5 and 12, and streaks are the worst
+offender; *unexpected* rewards behave much more like praise than like payment
+[1](https://hiwavemakers.com/blog/gamification-learning-apps-backfire-kids-research/). The three needs
+that sustain motivation are autonomy, competence and relatedness
+[5](https://thelearningrooms.com/beyond-badges-what-modern-gamification-does-to-the-brain/), which maps
+straight onto: a sandbox she controls (autonomy), a band she builds (competence), and playing it to you
+(relatedness). So:
 
-- **Ten keys.** One per level, drawn as a filled/unfilled row on the clubhouse screen ("4 / 10").
-- **A badge per level**, 1-bit each — a small glyph on the level map. Reuse `icons.c` where possible.
-- **A sticker passport** (paper, A5, folded): a page per level, a space for the sticker, one line
-  "what I learned", one line "what I made". The sticker is awarded by *you*, after she plays you the
-  loop. That single ritual is worth more than any firmware animation.
-- **Mystery sound.** Each level ends by unlocking one preset she has not heard, unnamed on the card
-  ("a sound from 1983"). Cheap to implement (a preset slot index), high anticipation.
-- **A jingle.** 4 notes from a tiny table on unlock — the only new audio in the whole project, and it
-  must be routed so the golden renders do not change.
-- **Nothing lost, ever.** No streak counters, no "you missed a day", no levels that can be downgraded.
+| Element | What it is | Why it survives the research |
+| --- | --- | --- |
+| **The band grows** | four tiles — DRUMS, BASS, KEYS, LEAD — lighting up as levels finish | a true statement about work she did, not a token; informational, not controlling |
+| **`3 / 10`** | levels finished | progress indicators help at 10+ *when they mean something* |
+| **Surprise sound** | each level ends with one unnamed preset ("a sound from 1983") | unexpected > expected; this is the only "prize" in the design |
+| **Sticker passport** (paper) | a page per level, sticker when she plays it to you | relatedness — the reward is the audience, not the sticker |
+| **A jingle** | 4 notes on completion, the only new audio in the project | tiny, and it must be routed so `tests/golden.txt` does not move |
+| **Nothing lost, ever** | no streaks, no daily counters, no scores, no leaderboards, nothing that can be downgraded | removes the entire class of "punished for missing a day" |
+
+And in the wording on the device: never "well done". Say what happened — **"SNARE ON 2 AND 4 — THAT'S
+A BACKBEAT"**. Informational, specific, true.
+
+Full detail, including the per-mission reward moments, in `KID-MODE-CURRICULUM.md` §6.
 
 ---
 
@@ -303,8 +321,8 @@ one thing — the sample bank.** So the space comes from data, not from UI surge
 | Priority | Cut (kid build only) | Gives | What it costs her |
 | --- | --- | --- | --- |
 | **1** | sample sets **FLUTE + SCRCH** (2 of 8) | **+22,866 B** | two presets (`LOFI FLUTE`, `SCRATCH`) |
-| 2 | `ui_studio.c` + `editor_live.c` (the 2.7 LIVE show page) | ~4 % of the code (~10 KB on device) | nothing she would use; you keep the rest of the editor (backup, piano roll, kits) |
-| 3 | `punch.c` (27 punch-in FX) | ~1.2 % of the code | level 6's most fun reward — do this last, if ever |
+| 2 | `editor_live.c` + `editor_fm6.c` + `editor_dsyn.c` (the *editor's* remote-control and patch pages — **not** `ui_studio.c`, which is the device's TRACKS/DRUMS screens) | ~1.3 % of the code (~4 KB on device) | nothing she uses; you keep backup / restore / piano roll |
+| 3 | `punch.c` (27 punch-in FX) | ~1.2 % of the code (~3–4 KB) | level 6's most fun reward — do this last, if ever |
 | 4 | sample set **HORNS** | +15,439 B | one preset |
 | — | ~~`FELUCCA_ARRANGER`~~ | only 0.3 % | **not worth it** — the plan's 2–4 KB guess was wrong |
 | — | ~~`FELUCCA_CDC`~~, ~~bitmap logo~~ | already spent in 2.7/2.8 | — |
@@ -316,10 +334,11 @@ Two consequences to plan for deliberately:
 
 - Cutting sets renumbers the SAMPLE presets, so the fork gets **its own `tests/golden.txt`** baseline
   (one reviewed `GOLDEN_UPDATE=1` run). Never for the stock build.
-- A kid build missing three presets cannot hand her "everything" at level 10. Make level 10 a
-  **graduation**: install stock 2.8.5, keep her projects and presets (formats are shared), and hand her
-  the missing sounds as part of the ceremony. That removes the "maintain a permanently reduced fork"
-  problem too.
+- A kid build missing presets cannot hand her "everything" at level 10. **Decided 20 Nov: level 10 is a
+  graduation** — install stock 2.8.5, keep her projects and presets (the formats are shared), and hand
+  her the held-back sounds as part of the ceremony. That removes the "maintain a permanently reduced
+  fork" problem, gives the course a proper ending, and means the kid build's own golden baseline only
+  has to be maintained until Christmas.
 
 **Still to fill in on your machine** (one command, §7 of the measurements doc): the baseline image size
 and the exact per-flag deltas, plus a built-in sanity check — `FELUCCA_CDC=1` should measure 6–8 KB,
@@ -333,7 +352,7 @@ somewhere. It lives on paper — and the paper is generated from the same missio
 uses, so the two can never disagree.
 
 **One mission table, two outputs.** Each mission in `kid_content.h` carries: id, level, a screen line
-(≤ 2 × 18 characters), four knob labels, a seed recipe, the unlock it completes, a hint line, and a
+(≤ 2 × 28 characters), four knob labels, a seed recipe, the unlock it completes, a hint line, and a
 "what this teaches" paragraph. A `tools/` script renders that table into A6 cards (one per mission,
 four per A4 sheet) plus the passport. If a mission's wording changes in code, the cards change the
 moment you reprint. This is the whole benefit the web app would have given, without a second device,
@@ -458,20 +477,18 @@ Dec 24.
 
 ## 15. Decisions taken, and what is still open
 
-Settled on 19 Nov (see the table at the top): no companion app for now; mixed gating with an
-always-open sandbox; English only; one unit today with a second on order.
+Settled: no companion app for now; mixed gating with an always-open sandbox; English only; level 10 as
+graduation to stock SLOOP; one unit today with a second on order. The full list with dates is in
+`KID-MODE-HANDOFF.md` §2.
 
-Still open, and cheap to answer later:
+Still open, all small and none blocking the first week of work:
 
-1. **Should the first boot be the clubhouse or a demo song?** (Recommended: boot straight into a
-   loaded demo *song* she can press PLAY on — the very first interaction should be hearing something,
-   not reading a level card. The clubhouse appears on the second press.)
-2. **Do you want your own song preloaded?** (Recommended yes: one of the two demo songs is yours, with
-   a card that says so. It costs nothing and it is the thing she will remember.)
-3. **Her name on the splash?** (Cheap — a string change — and it makes the machine hers. Downside: if
-   you later share the firmware, it says her name. Keep it in a private build.)
-4. **Sticker source:** buy a sheet of generic stars, or print level badges as die-cut circles? (The
-   second looks better in the passport and costs one printing run.)
+1. **First boot: clubhouse or demo song?** (Recommendation: the demo song — the first interaction should
+   be hearing something, with the clubhouse one press away.)
+2. **Is one of the preloaded songs yours, with a card saying so?** (Recommended yes. It costs nothing
+   and it is the thing she will remember.)
+3. **Her name on the boot splash?** (Cheap and private-build only.)
+4. **Stickers or printed badges for the passport?**
 
 ---
 
