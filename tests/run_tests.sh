@@ -35,6 +35,9 @@ run() { echo "== $1"; shift; "$@" || fail=1; }
 mkdir -p build/gen
 [ build/gen/felucca_tables.h -nt tools/gen_tables.py ] || python3 tools/gen_tables.py build/gen/felucca_tables.h
 [ build/gen/felucca_fm6.h -nt tools/gen_fm6_patches.py ] || python3 tools/gen_fm6_patches.py build/gen/felucca_fm6.h
+# SLOOP JR: the mission table (docs/kid_missions.tsv is the source of truth) and the printed cards
+{ [ build/gen/kid_missions.h -nt docs/kid_missions.tsv ] && [ build/gen/kid_missions.h -nt tools/gen_kid_missions.py ]; } ||
+    python3 tools/gen_kid_missions.py build/gen/kid_missions.h docs/kid_missions.tsv build/kid_cards.md
 
 $CC -o "$OUT/storage_test" tests/storage_test.c
 run "flash storage (A/B, torn writes)" "$OUT/storage_test"
@@ -84,7 +87,7 @@ run "after Felucca 1.4 / 1.5: INSERT, filter TYPE, ENV SYNC, LFO 2, drum mutes, 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/ui_pages_test" tests/ui_pages_test.c -lm
 run "live UI: pages, layers (punch, steps, erase, roll, key, mix), holds, drums, REC, fuzz" "$OUT/ui_pages_test" "$OUT"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/kid_test" tests/kid_test.c -lm
-run "SLOOP JR gate (levels 1..10), the clubhouse, the two rooms (30 missions + a power cut)" "$OUT/kid_test"
+run "SLOOP JR: the gate, the clubhouse, the two rooms (30 missions + a power cut), the mission engine" "$OUT/kid_test"
 # no divide by 0 (the FM-1 runs with the div0 trap off, hal/fm1_irq.h: a real one would give a wrong value
 # silently): the UI fuzz, the sequencer, the projects and a minute of random live use, with UBSan
 UBSAN="${CC_UB:-cc} -O1 -w -fsanitize=integer-divide-by-zero -fno-sanitize-recover=integer-divide-by-zero -Ibuild/gen -Ifirmware/src -Ifirmware/hal"

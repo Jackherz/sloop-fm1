@@ -159,6 +159,101 @@ static int page_idx(const char *title, uint32_t fam)
 }
 static int msg_is_refusal(void) { return !strncmp(ui.msg, "NOT YET", 7); }
 
+
+/* ---- the mission engine's harness (kid tests 4 and 5) ---- */
+/* (KID_PART_TRACK: kid.c's D/B/K/L -> track table, one definition) */
+static uint32_t r5;                                                  /* test 5's start result */
+static int end_mission(void)                                          /* (leave defers while it stops) */
+{
+    uint32_t k;
+    for (k = 0; k < 400u; k++) {
+        int r = kid_mission_end();
+        if (r != 0)
+            return r;
+        frame();
+    }
+    return -1;
+}
+
+/* the first n keys of the panel's key bits (14..40) */
+static void keys_n(uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < n; i++)
+        kid_mission_tick(1u << (14u + i), fm1_ms);
+}
+/* one step of a check, short of its boundary */
+static int just_before(uint8_t kind, uint32_t a, uint32_t b)
+{
+    switch (kind) {
+    case KCHK_KEYS:   keys_n(a - 1u); return kid_chk(kind, a, b);
+    case KCHK_BARS:   kid_wit.bars = (uint8_t)(a - 1u); return kid_chk(kind, a, b);
+    case KCHK_PARAMS: for (uint32_t i = 0; i + 1u < a; i++) kid_wit_param((uint32_t)P_ATK + i); return kid_chk(kind, a, b);
+    case KCHK_PRESET: kid_wit.presets = (uint8_t)(a - 1u); return kid_chk(kind, a, b);
+    case KCHK_SAVED:  kid_wit.saves = (uint8_t)(a - 1u); return kid_chk(kind, a, b);
+    case KCHK_WROTE:  { track_t *t = &trk[a]; for (uint32_t i = 0; i + 1u < b; i++)
+                            t->step[i].note[0] = (uint8_t)(48u + i), t->step[i].vel = 100; }
+                      return kid_chk(kind, a, b);
+    case KCHK_LANE:   return kid_chk(kind, a, b);   /* (the seed's lanes are the "before" state) */
+    case KCHK_NOTEPC: { track_t *t = &trk[a]; uint32_t pc = 0;   /* one class short */
+                        for (uint32_t i = 0; i < 12u; i++) if ((b >> i & 1u) && !pc) pc = i + 1u;
+                        t->step[0].note[0] = (uint8_t)(48u + pc - 1u); t->step[0].vel = 100; }
+                      return kid_chk(kind, a, b);
+    default:          return 0;                    /* (a binary check has no boundary below it) */
+    }
+}
+/* install exactly what the check asks for */
+static void satisfy(uint8_t kind, uint32_t a, uint32_t b)
+{
+    switch (kind) {
+    case KCHK_HONOUR: return;
+    case KCHK_KEYS:   keys_n(a); return;
+    case KCHK_LANE:   for (uint32_t i = 0; i < NSTEP; i++)
+                          if (b >> i & 1u) TDRUM->dstep[i].on[a >> 3] |= (uint8_t)(1u << (a & 7u));
+                      return;
+    case KCHK_WROTE:  { track_t *t = &trk[a]; for (uint32_t i = 0; i < b; i++)
+                            t->step[i].note[0] = (uint8_t)(48u + i), t->step[i].vel = 100; }
+                      return;
+    case KCHK_NOTEPC: { track_t *t = &trk[a]; uint32_t j = 0;
+                        for (uint32_t i = 0; i < 12u; i++)
+                            if (b >> i & 1u) t->step[j].note[0] = (uint8_t)(48u + i), t->step[j++].vel = 100; }
+                      return;
+    case KCHK_BARS:   kid_wit.bars = (uint8_t)a; return;
+    case KCHK_PARAM:  kid_wit_param(a); return;
+    case KCHK_PARAMS: for (uint32_t i = 0; i < a; i++) kid_wit_param(a ? (uint32_t)P_ATK + i : 0u); return;
+    case KCHK_PRESET: kid_wit.presets = (uint8_t)a; return;
+    case KCHK_LAYER:  kid_wit_layer(a); return;
+    case KCHK_SAVED:  kid_wit.saves = (uint8_t)a; return;
+    case KCHK_UNDONE: kid_wit_undone(); return;
+    case KCHK_ENGINE: trk[0].eng_req = (uint8_t)a; return;
+    case KCHK_SAMPLE: kid_wit_sample(); return;
+    default: return;
+    }
+}
+/* clear a check's witness again (the second check's boundary test) */
+static void undo_kind(uint8_t kind, uint32_t a, uint32_t b)
+{
+    switch (kind) {
+    case KCHK_HONOUR: return;                        /* (cannot be taken away) */
+    case KCHK_KEYS:   kid_wit.keys = 0; return;
+    case KCHK_LANE:   for (uint32_t i = 0; i < NSTEP; i++)
+                          TDRUM->dstep[i].on[a >> 3] &= (uint8_t)~(1u << (a & 7u));
+                      return;
+    case KCHK_WROTE:  memset(trk[a].step, 0, sizeof trk[a].step); return;
+    case KCHK_NOTEPC: memset(trk[a].step, 0, sizeof trk[a].step); return;
+    case KCHK_BARS:   kid_wit.bars = 0; return;
+    case KCHK_PARAM:  kid_wit.pmask[0] = kid_wit.pmask[1] = kid_wit.pmask[2] = kid_wit.gmask = 0; return;
+    case KCHK_PARAMS: kid_wit.pmask[0] = kid_wit.pmask[1] = kid_wit.pmask[2] = kid_wit.gmask = 0; return;
+    case KCHK_PRESET: kid_wit.presets = 0; return;
+    case KCHK_LAYER:  kid_wit.lmask = 0; return;
+    case KCHK_SAVED:  kid_wit.saves = 0; return;
+    case KCHK_UNDONE: kid_wit.undone = 0; return;
+    case KCHK_ENGINE: for (uint32_t i = 0; i < NPART; i++) trk[i].eng_req = (uint8_t)i; return;
+    case KCHK_SAMPLE: kid_wit.samples = 0; return;
+    default: return;
+    }
+}
+
 int main(void)
 {
     uint32_t i, l, lvl;
@@ -638,6 +733,152 @@ int main(void)
         flash_ok = 1;
         proj_capture(&got);
         check(memcmp(&got, &her, sizeof her) == 0, "test 3: a refused mission leaves her song alone");
+    }
+
+
+    /* 4 and 5: the mission engine (STAGES S5). Every seed expands and passses proj_ok();
+     * every check passes at its boundary and not one step before; a mission left and
+     * re-entered resumes at the same state; the null mission (SEQ) completes. */
+    {   static project_t got;
+        uint32_t id, ok = 0, seedok = 0, bnd = 0, n, t, want = 0;
+
+        kid_reset();                     /* (a clean progress record: level 1, nothing done) */
+        kid_set_level(10);               /* (a full gate: the engine is what is under test) */
+        settle();
+
+        /* every seed expands to a project, with its tempo, kit and parts */
+        for (id = 0; id < KID_NMISSION; id++) {
+            const kid_seed_t *sd = &KID_SEEDS[id];
+            uint32_t i, parts_ok = 1;
+            for (i = 0; i < 100u; i++) {         /* (start defers while the transport stops) */
+                int r = kid_mission_start((uint8_t)id);
+                if (r != 0) { ok = r == 1; break; }
+                frame();
+            }
+            if (!ok)
+                break;
+            proj_capture(&got);
+            n = (uint32_t)proj_ok(&got);
+            n &= (uint32_t)(song.g[G_BPM] == (int16_t)sd->bpm);
+            n &= (uint32_t)(TDRUM->p[P_E0] == (int16_t)sd->kit);
+            for (i = 0; i < 4u; i++) {           /* the seeded drum lanes */
+                uint32_t k, m = 0;
+                if (sd->lane_id[i] >= DRUM_LANES)
+                    continue;
+                for (k = 0; k < NSTEP; k++)
+                    if ((TDRUM->dstep[k].on[sd->lane_id[i] >> 3] >> (sd->lane_id[i] & 7u)) & 1u)
+                        m |= 1u << k;
+                n &= (uint32_t)(m == sd->lane[i]);
+            }
+            seedok += n;
+            /* the parts the seed does not name are muted, the ones it does are not */
+            for (i = 0; i < 4u; i++)
+                parts_ok &= (trk[KID_PART_TRACK[i]].p[P_MUTE] != 0) == !((sd->parts >> i) & 1u);
+            seedok += parts_ok;
+            kid_mission_end();
+            settle();
+        }
+        {
+            char b[64];
+            snprintf(b, sizeof b, "test 4: 30 seeds expand (project, tempo, kit, lanes, parts) (%u/%u)", seedok, 60u);
+            check(seedok == 60u, b);
+        }
+
+        /* a synthetic witness sequence per check: not one step before the boundary */
+        for (id = 0; id < KID_NMISSION; id++) {
+            const kid_mission_t *m = &KID_MISSIONS[id];
+            uint32_t k, i;
+            int r;
+            kid_reset();
+            kid_set_level(10);
+            settle();
+            for (k = 0; k < 100u; k++) {
+                r = kid_mission_start((uint8_t)id);
+                if (r != 0) break;
+                frame();
+            }
+            if (r != 1) { bnd++; continue; }
+            song.playing = 1;                       /* (a knob counts only while it plays) */
+            {   int jb = just_before(m->check, m->c0, m->c1);   /* not one step before the boundary */
+                if (jb) printf("DBG id %u: check %u (%u,%u) passes before\n", id, m->check, m->c0, m->c1);
+                bnd += jb == 0; }
+            satisfy(m->check, m->c0, m->c1);
+            if (!kid_chk(m->check, m->c0, m->c1)) printf("DBG id %u: check %u (%u,%u) not at boundary\n", id, m->check, m->c0, m->c1);
+            bnd += kid_chk(m->check, m->c0, m->c1) != 0;        /* and it is true at the boundary */
+            if (m->check2) {
+                bnd += kid_chk(m->check2, m->d0, m->d1) == 0;   /* the second one is still open */
+                satisfy(m->check2, m->d0, m->d1);
+                if (!kid_mission_pass()) printf("DBG id %u: check2 %u (%u,%u) missing\n", id, m->check2, m->d0, m->d1);
+                bnd += kid_mission_pass() != 0;                 /* both: the mission passes */
+            } else {
+                bnd += kid_mission_pass() != 0;                 /* the one check completes it */
+            }
+            song.playing = 0;
+            kid_mission_end();
+            settle();
+        }
+        for (id = 0; id < KID_NMISSION; id++)
+            want += KID_MISSIONS[id].check2 ? 4u : 3u;
+        {
+            char b[72];
+            snprintf(b, sizeof b, "test 4: every check at its boundary, not one step before (%u/%u)", bnd, want);
+            check(bnd == want, b);
+        }
+
+        /* 5: left and re-entered, a started mission resumes at the same state */
+        kid_reset();
+        kid_set_level(10);
+        settle();
+        for (t = 0; t < 100u; t++) { if ((r5 = kid_mission_start(0)) != 0) break; frame(); }
+        check(r5 == 1 && kid_mission_done(0) == 1, "test 5: a mission that starts is marked started");
+        for (i = 0; i < 5u; i++)
+            kid_mission_tick(1u << (14u + i), fm1_ms);       /* five keys */
+        check(!kid_mission_pass(), "test 5: five keys are not eight");
+        check(end_mission() == 1, "test 5: left");
+        settle();
+        for (t = 0; t < 100u; t++) { if ((r5 = kid_mission_start(0)) != 0) break; frame(); }
+        check(r5 == 1, "test 5: re-entered");
+        kid_mission_tick(1u << 20, fm1_ms);                  /* one more key: six, not eight */
+        check(!kid_mission_pass(), "test 5: the witnesses came back with it");
+        for (i = 0; i < 2u; i++)
+            kid_mission_tick(1u << (21u + i), fm1_ms);
+        check(kid_mission_pass(), "test 5: and the mission can be finished");
+
+        /* the null mission: SEQ completes it (the plumbing without content) */
+        id = 28u;                                            /* SHOW AND TELL: honour */
+        end_mission();
+        settle();
+        for (t = 0; t < 100u; t++) { if ((r5 = kid_mission_start((uint8_t)id)) != 0) break; frame(); }
+        check(r5 == 1 && kid_mission_pass(), "the null mission passes with no witnesses");
+        check(kid_mission_finish() == 1 && kid_mission_done((uint8_t)id) == 2, "the null mission completes");
+        check(kid_mission_finish() == 1, "completing twice is harmless");
+        end_mission();
+        settle();
+
+
+        /* a level's three missions: the badge, and one level up */
+        kid_reset();
+        kid_set_level(1);
+        settle();
+        {   uint32_t m, lvl1_ok = 0;
+            for (m = 0; m < 3u; m++) {                       /* missions 1, 2, 3: level 1 */
+                const kid_mission_t *mm = &KID_MISSIONS[m];
+                for (t = 0; t < 100u; t++) { if ((r5 = kid_mission_start((uint8_t)m)) != 0) break; frame(); }
+                song.playing = 1;
+                satisfy(mm->check, mm->c0, mm->c1);
+                if (mm->check2)
+                    satisfy(mm->check2, mm->d0, mm->d1);
+                lvl1_ok += kid_mission_finish() == 1;
+                song.playing = 0;
+                end_mission();
+                settle();
+            }
+            check(lvl1_ok == 3, "the three missions of level 1 complete");
+            check(kid_level() == 2, "and the gate opens level 2");
+            check((kid_ram.badges & 2u) != 0, "with the level's badge");
+        }
+        check(kid_mission_of_level(1, 0) == 0 && kid_mission_of_level(2, 0) == 3 &&
+              kid_mission_of_level(1, 3) == 0xFF, "the first mission of a level (and none past the last)");
     }
 
     printf("kid: %d failure%s\n", fails, fails == 1 ? "" : "s");

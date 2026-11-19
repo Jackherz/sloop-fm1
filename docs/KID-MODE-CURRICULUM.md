@@ -48,7 +48,8 @@ playing it for you (relatedness, not payment).
 
 ## 2. Mission anatomy
 
-Every mission is one row in the table in `kid_missions.c`:
+Every mission is one row in `docs/kid_missions.tsv` (the source of truth: `tools/gen_kid_missions.py`
+turns it into the firmware's table and the printed cards):
 
 | field | what it is | constraint |
 | --- | --- | --- |

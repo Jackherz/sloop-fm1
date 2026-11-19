@@ -267,6 +267,35 @@ seed worked in, `autosave_resume()` as at boot) brings her song back, not the se
 | **Size** | ~1,500 B + content (30 × ~120 B = 3.6 KB). |
 | **Risk** | content size. Write the 30 missions short from the start (2 × 28 chars); the printed card is where the words go. |
 
+**As built.**
+- **The table is `docs/kid_missions.tsv`** (30 rows × 16 columns, its own header documents them) and
+  `tools/gen_kid_missions.py` writes two things from it: `build/gen/kid_missions.h` (the strings, the
+  `KID_SEEDS[]` recipes, the checks, `KID_LVL_MISSION[]`) and `build/kid_cards.md` (the printed cards —
+  the long copy exists nowhere else). The generator refuses a title over 14 characters or a line over 28,
+  so a mission cannot silently truncate. `./build.sh` generates it; so does `tests/run_tests.sh`.
+- **A seed is a recipe, never a stored project** (decision 3): bpm, kit, parts (D/B/K/L → track 3, 0, 1, 2),
+  up to four drum lanes of 16 steps, up to eight bass notes of 16 steps. `kid_seed_build()` clears every
+  track's steps, locks and fill conditions, sets the tempo, the kit and the mutes, then writes the named
+  lanes and notes into the project the mission loads. Everything not named is the *hole* she fills.
+- **Witnesses are smaller than §6 of `KID-MODE-IMPLEMENTATION.md` predicted**: keys, a parameter mask,
+  layer mask, four counters and a bar accumulator; `wrote` / `notepc` / `engine` need no witness at all
+  (they read the live pattern and `eng_req`). `kid_chk()` is one `switch`.
+- **The record holds two bits per mission** (0 untouched, 1 started, 2 done), so leaving and re-entering
+  resumes; saving the record rides the existing settings write (`kid_dirty`, finding 14).
+- **Finding 18 and 24 wired**: entering a mission clears `rec_wait`/`ft_on` and forces `rec_tempo = 1`,
+  so level 1's "REC, then play" is the grid and not a free take.
+- **Hooks (one line each)**: `edit_param()` (knobs, gated on `song.playing`), `preset_go()` and the drum
+  kit's `P_E0`, `undo_swap()`, `project_save()`, `layers_input()`. `kid_mission_tick()` is called from
+  `kid_input()`, after `kb_grid` (finding 31 still holds).
+- **Not wired yet**: `kid_wit_sample()` (mission 28's SAMPLE check) has no caller until the user-sample
+  path is touched; and nothing in the clubhouse starts a mission yet — that is S6's job.
+- **Tests as built**: kid test 4 (all 30 seeds expand to a project with their tempo, kit, lanes and
+  mutes; every check passes at its boundary and not one step before — 98 boundary events over the table)
+  and kid test 5 (a started mission resumes with its witnesses after leaving and re-entering; the null,
+  honour-only mission completes on SEQ and is idempotent; level 1's three missions set the badge and open
+  level 2). 170 checks in `tests/kid_test.c`, 0 failures, also under UBSan; stock still 182 golden
+  renders, 0 changed.
+
 ### S6 — Levels 1–3 and the reward vocabulary  (2 days)
 
 | | |

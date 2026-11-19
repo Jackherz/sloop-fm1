@@ -1,0 +1,56 @@
+# SLOOP JR — the 30 missions. THE SOURCE OF TRUTH for both the firmware table and the printed cards.
+# tools/gen_kid_missions.py reads this file and writes build/gen/kid_missions.h and build/kid_cards.md.
+#
+# One row per mission, tab separated. Edit this, then re-run the generator (./build.sh does it).
+#   id      0..29 in order of play (the numbers here start at 1 on the cards: id + "MISSION")
+#   level   1..10 (the gate level the mission belongs to)
+#   title   the FONT_L heading, <= 14 characters
+#   line1   the first FONT_S line, <= 28 characters ("-" = none)
+#   line2   the second FONT_S line, <= 28 characters ("-" = none)
+#   hint    what SEQ says (the second hint), <= 28 characters
+#   bpm     the seed's tempo
+#   kit     the seed's drum kit index (0 ACOUSTIC, 1 DEEP, 2 TIGHT, 3 BRIGHT, 4 DUST, 5 808,
+#           6.. user kits, then SYN1..SYN4; 5 = the default)
+#   parts   which tracks sound: D drums, B bass, K keys, L lead (the rest are muted)
+#   drums   the seeded drum lanes: lane=steps, 1-based, '.' or '-' for none (<= 4 lanes)
+#   bass    the seeded bass notes: note=step, MIDI note numbers (36 = C2) (<= 8 notes)
+#   check   KEYS / LANE / WROTE / NOTEPC / BARS / PARAM / PARAMS / PRESET / LAYER / SAVED /
+#           UNDONE / ENGINE / SAMPLE / HONOUR
+#   arg     what the check wants: LANE lane=steps (1-based), WROTE track=count (0 bass,
+#           1 keys, 2 lead, 3 drums), NOTEPC track=pitchclasses, PARAM id (or id=count),
+#           PARAMS count, PRESET count,
+#           LAYER LY_*, ENGINE ENGI_*, KEYS count, BARS count
+#   check2  a second check that must also pass ("-" = none) and its arg
+#
+# The card text is printed only: it never enters the firmware.
+id	level	title	line1	line2	hint	bpm	kit	parts	drums	bass	check	arg	check2	arg2	card
+1	1	FIRST HIT	PRESS THE WHITE KEYS	ONE AT A TIME	EVERY KEY IS A DRUM	92	5	D	-	-	KEYS	8	-		The white keys are a drum kit, in order: kick, kick 2, snare, clap, hat, open hat, pedal, rim. Hit them all - nothing here can break.
+2	1	THE BEAT	PLAY KICK ON 1 AND 3	REC, THEN PLAY	KICK IS THE FIRST KEY	92	5	D	-	-	LANE	kick=1,5,9,13	-		Kick on 1 and 3 is the heartbeat of nearly every dance record ever made. Count 1-2-3-4 and hit on 1 and 3.
+3	1	YOUR KIT	PICK A KIT YOU LIKE	THEN PLAY IT	TURN PRESETS, THEN PLAY	92	5	D	kick=1,5,9,13 hat=1,5,9,13	-	PRESET	3	BARS	2	ACOUSTIC, DEEP, TIGHT, BRIGHT, DUST, 808: same beat, different drum kit. Which one sounds like the music you like?
+4	2	BACKBEAT	ADD SNARE ON 2 AND 4	-	SNARE IS THE THIRD KEY	92	5	D	kick=1,5,9,13 hat=1,5,9,13	-	LANE	snare=5,13	-		The snare on 2 and 4 is the clap you hear in every pop song. Now it is a real beat.
+5	2	IN BETWEEN	HATS BETWEEN	HOLD OCT- FOR SOFT	A SOFT HIT IS A GHOST	92	5	D	kick=1,5,9,13 snare=5,13	-	LANE	hat=3,7,11,15	-		Hats fill the space between the beats. A quiet one (hold OCT-) makes it breathe.
+6	2	SWING IT	TURN SWING UP	LISTEN TO THE LIMP	ONE KNOB, ONE FEELING	92	5	D	kick=1,5,9,13 snare=5,13 hat=1,3,5,7,9,11,13,15	-	PARAM	G_SWING	-		Straight is 0. Push it up and the off-beats lean late: that is swing, and it is the difference between a drum machine and a drummer.
+7	3	LOW END	BASS: PLAY THE ROOT	LOWEST WHITE KEY	TRACK 2 IS A BASS	90	5	DB	kick=1,5,9,13 snare=5,13 hat=1,3,5,7,9,11,13,15	-	WROTE	0=4	-		This is your instrument. Track 2 is a bass: one note at a time, low, and it holds the band up.
+8	3	ROOT MOVING	MOVE THE ROOT	C, THEN F, THEN G	THREE NOTES ARE A SONG	90	5	DB	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	NOTEPC	0=0,5,7	-		In a lot of songs the bass does not play melodies - it walks between three notes. C, F, G: try it under your drums.
+9	3	SLIDE	SLIDE INTO A NOTE	TURN GLIDE UP	GLIDE IS YOUR HAND	90	5	DB	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,43=9	PARAM	P_GLIDE	-		On a double bass a slide is a real thing your hand does. Here it is one knob.
+10	4	TRIADS	CHORDS: ONE FINGER	PLAY WHITE KEYS	ONE KEY, THREE NOTES	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_CHORD	KEYS	3	One white key now plays a whole triad - the same chord shape your left hand makes, spelled out by the machine.
+11	4	SEVENTHS	NOW TRY 7TH	SOUNDS JAZZY?	THE 7TH IS THE JAZZ	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_CHORD=2	-		Add the 7th and a plain chord becomes the sound of jazz, neo-soul and lo-fi beats.
+12	5	BRIGHTNESS	TURN TONE DOWN	WHILE IT PLAYS	TONE IS THE BIG ONE	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_TFLT	-		This knob is the single most useful thing on the machine. Everything you have ever heard in electronic music does this.
+13	5	PLUCK OR PAD	ATTACK: CLICK TO SWELL	-	FAST IS PLUCKED	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_ATK	-		Fast attack = plucked. Slow attack = a pad that fades in. Same note, different instrument.
+14	5	RESONANCE	PUSH RESONANCE UP	HEAR IT SING	IT WHISTLES ONE NOTE	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAMS	2	-		Turn this up and the filter starts to whistle at one note. That is how acid basslines work.
+15	6	ECHO	SEND SOME DELAY	ON THE SNARE	ONE DRUM, BIG SPACE	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	G_DRDLY	-		An echo on one drum only: that is how dub and techno get that huge space out of a tiny room.
+16	6	ROOM	ADD REVERB	MAKE IT BIG	THE ROOM IS THE SIZE	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_REV	-		Reverb is the room. Small room = tight. Big room = cathedral.
+17	6	PUNCH IN	HOLD FX	HIT A KEY	LET GO AND IT IS BACK	90	5	DBK	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	LAYER	LY_FX	-		Hold FX and hit a key: the music gets destroyed for a second. Let go and it is back. This is what DJs do with their hands.
+18	7	ONE FINGER	HOLD ONE KEY	HEAR IT MOVE	THE ARP PLAYS FOR YOU	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_AMODE	-		Hold one note and the machine plays it over and over in a pattern. Chords become melodies.
+19	7	SCALE SAFE	LOCK TO C MINOR	NOTHING SOUNDS WRONG	NO WRONG NOTES	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	PARAM	P_ROOT	PARAM	P_SCALE	Lock the keys to a scale and every note you press is in tune with the rest. You cannot play a wrong note.
+20	7	LEAD	PLAY A TUNE ON TOP	FOUR NOTES IS A HOOK	THE TOP LINE IS YOURS	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	WROTE	2=4	BARS	4	Everything is playing - now the top line. Four notes is a melody. That is all a hook is.
+21	8	PLUCKED	PHYS: STR PLUCK	LIKE A PIZZICATO	A STRING, MADE LIVE	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	ENGINE	ENGI_PHYS	KEYS	4	This engine does not play a recording. It computes a string being plucked, right now, sample by sample. Pizzicato, basically.
+22	8	BOWED	NOW CELLO BOW	HOLD THE KEY	HOLD IT AND IT BOWS	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	ENGINE	ENGI_PHYS	PRESET	1	Hold the key and it bows. Same maths as your bass, different hand.
+23	8	SYMPATHETIC	SITAR: PLAY C	HEAR OTHERS RING	ONE NOTE, MANY STRINGS	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	ENGINE	ENGI_PHYS	PARAMS	1	Strike one note and other strings ring along without being touched. That is a sitar, and it is also why the piano pedal sounds the way it does.
+24	9	KEEP IT	SAVE THIS	IT IS YOURS NOW	SAVING IS COMPOSING	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	SAVED	1	-		Saving is the difference between playing and composing. This one is kept.
+25	9	TWO PARTS	MAKE A SECOND PART	SAME BAND, NEW TUNE	A VERSE AND A CHORUS	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	SAVED	2	-		A verse and a chorus, or an A and a B. Two ideas that answer each other: that is a song.
+26	9	THE ORDER	PUT A B A	PLAY THE WHOLE THING	ORDER IS A CHOICE	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	BARS	8	-		Order is a choice. A-B-A is the oldest shape in music and it still works.
+27	10	SIX OPERATORS	FM6: ONE KEY	TURN THE MACROS	SIX LITTLE OSCILLATORS	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	ENGINE	ENGI_FM6	PARAMS	2	This is how a DX7 made every bell, electric piano and bass sound of the 1980s. Six little oscillators, borrowing each other's wobble.
+28	10	YOUR VOICE	RECORD 4 SECONDS	NOW PLAY IT LOW	ANY SOUND, ANY PITCH	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	SAMPLE	1	-		Whatever you put in, you can play at any pitch. Record your voice, then play it as a bassline.
+29	10	SHOW AND TELL	PLAY ME YOUR SONG	SEQ WHEN DONE	YOU DECIDE WHEN	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	HONOUR	1	-		This one has no test. You decide when it is finished, and you play it to someone.
+30	10	GRADUATE	YOU BUILT A BAND	NOW THE WHOLE ONE	NOTHING IS LOCKED	90	5	DBKL	kick=1,5,9,13 snare=5,13 hat=1,5,9,13	36=1,36=9	HONOUR	1	-		Ten levels. Drummer, bass, chords, melody, and a song. Now the whole machine, with nothing locked and nothing to learn next - the same one that gets updated by itself.

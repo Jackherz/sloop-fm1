@@ -296,6 +296,10 @@ UI_SMALL static int undo_swap(int redo)
     undo.len = len;
     undo.undone = (uint8_t)!redo;
     fm1_irq_on();
+#if FELUCCA_KID
+    if (!redo)
+        kid_wit_undone();                            /* SLOOP JR: a mission witness (the safety mission) */
+#endif
     sync_reload = 1;
     ui.force = 1;
     return 1;
@@ -1061,6 +1065,9 @@ UI_SMALL static void preset_go(uint32_t n)                    /* load list index
     if (e != TSEL->eng_req)
         select_engine(e);
     apply_preset(k);
+#if FELUCCA_KID
+    kid_wit_preset();                                /* SLOOP JR: the sound changed (a mission witness) */
+#endif
     ui.force = 1;
 }
 

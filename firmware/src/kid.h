@@ -53,4 +53,42 @@ int kid_input(uint32_t pressed, uint32_t notes, uint32_t home);  /* 1: the input
  * (her song cannot be saved / the seed is not a project / nothing to leave) */
 int kid_mission_enter(const void *seed, uint32_t n);   /* flush her song, suspend autosave, load the seed */
 int kid_mission_leave(void);                           /* restore her song from OBJ_AUTOSAVE */
+
+/* ---- the mission engine (S5): one table, seeds, witnesses, checks ---------- */
+/* docs/kid_missions.tsv -> tools/gen_kid_missions.py -> build/gen/kid_missions.h:
+ * the text, the seeds, the checks. No prose in the image. */
+enum {                          /* what completes a mission (the curriculum's §4 notation) */
+    KCHK_NONE = 0,
+    KCHK_HONOUR,                /* she pressed SEQ: "I am happy with this" */
+    KCHK_KEYS,                  /* this many different keys, since the mission started */
+    KCHK_LANE,                  /* drum lane c0 has steps c1 (bit 0 = step 1) */
+    KCHK_WROTE,                 /* track c0 has c1 steps written */
+    KCHK_NOTEPC,                /* track c0's notes cover pitch classes c1 (12 bits) */
+    KCHK_BARS,                  /* c0 bars played with two parts or more sounding */
+    KCHK_PARAM,                 /* parameter c0 moved while playing (0x80 | G_*: a global) */
+    KCHK_PARAMS,                /* this many different parameters moved while playing */
+    KCHK_PRESET,                /* the sound changed c0 times */
+    KCHK_LAYER,                 /* LY_* c0 held */
+    KCHK_SAVED,                 /* a section saved (c0 times) */
+    KCHK_UNDONE,                /* she undid something */
+    KCHK_ENGINE,                /* a part runs engine c0 */
+    KCHK_SAMPLE                 /* she stored a sound of her own (c0 of them) */
+};
+extern uint8_t kid_ms_id;                       /* the mission up: 0..29, 0xFF = none */
+int kid_mission_start(uint8_t id);              /* expand the seed and enter (as enter: 0 stopping, 1 up, -1 refused) */
+int kid_mission_end(void);                      /* leave a mission (her song back) */
+uint8_t kid_mission_pass(void);                 /* 1: the checks are true now */
+uint8_t kid_mission_finish(void);               /* pass + record + badge the level when its missions are done */
+void kid_mission_tick(uint32_t notes, uint32_t ms);   /* witnesses, once a UI frame */
+uint8_t kid_mission_done(uint8_t id);           /* 1: done, 2: started and not finished */
+const char *kid_mission_title(uint8_t id), *kid_mission_line(uint8_t id, uint32_t n),
+           *kid_mission_hint(uint8_t id);
+uint8_t kid_mission_of_level(uint8_t level, uint8_t nth);   /* 0..29, 0xFF = none */
+/* the witnesses the stock paths feed (they do nothing unless a mission is up) */
+void kid_wit_param(uint32_t id);
+void kid_wit_preset(void);
+void kid_wit_layer(uint32_t l);
+void kid_wit_saved(void);
+void kid_wit_undone(void);
+void kid_wit_sample(void);
 #endif

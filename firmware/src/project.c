@@ -587,6 +587,9 @@ UI_SMALL static void project_save(uint32_t slot)
     if (song.playing || transport_req) { ui_message("STOP BEFORE SAVE"); return; }
 #endif
     proj_capture(p);
+#if FELUCCA_KID
+    kid_wit_saved();                                 /* SLOOP JR: a section is kept (a mission witness) */
+#endif
 #if FELUCCA_FLASH
     if (flash_ok) {
         if (st_save(OBJ_PROJECT0 + (slot & 3u), p, sizeof *p))

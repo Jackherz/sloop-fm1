@@ -563,6 +563,9 @@ UI_SMALL static void edit_param(uint32_t slot, int32_t steps)
         v = (int32_t)kid_kit_max();   /* EDIT 1 KNOB 1 is the kit too: the level's kits (finding 9) */
 #endif
     *vp = (int16_t)v;
+#if FELUCCA_KID
+    kid_wit_param(pg->scope == SC_GLOBAL ? (0x80u | (uint32_t)id) : (uint32_t)id);   /* SLOOP JR: a mission witness */
+#endif
     if (pg->scope != SC_GLOBAL && p_lockable(id))
         ui.lock_par = (uint8_t)id;                        /* the SEQ layer's lock parameter: the last one touched */
     if (pg->scope != SC_GLOBAL)
@@ -889,6 +892,10 @@ UI_SMALL static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_
         if (d && held == LY_PLAY)
             held = l;
     }
+#if FELUCCA_KID
+    if (held != LY_PLAY)
+        kid_wit_layer(held);                             /* SLOOP JR: this layer is in use (a mission witness) */
+#endif
     if (held != LY_PLAY && home == BT_TAP && !home_eat) {  /* held + HOME: locked open */
         ly_lock = (uint8_t)held;
         used[held] = 1;
