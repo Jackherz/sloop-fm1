@@ -270,8 +270,19 @@ the next boot will restore stale kits.
 ## 8. Parent mode, volume, exits
 
 - **Combo:** `HOME` held 3 s while in the sandbox → the existing menu code (`ui_menu.c`) with a
-  reduced item list: `UNLOCK ALL`, `RESET PROGRESS`, `VOLUME LIMIT`, `BACKUP REMINDER`.
-  Reuse `ui.menu`/`ui.menu_sel` rather than a new screen; `menu_input()` already handles knobs.
+  reduced item list. Reuse `ui.menu`/`ui.menu_sel` rather than a new screen; `menu_input()` already
+  handles knobs and its items are **all settings** — there is no project object in it, so it cannot
+  wipe her work (finding 37).
+
+  **Keep:** COLOR, ZOOM, KNOB ACCEL, LIGHTS, KEYS, NOTES, SPEAKER LOWCUT, STEP ADVANCE, DRUM PREVIEW,
+  FILTER RESO, MIDI LEARN CLEAR, ABOUT. Plus the kid-only rows: `UNLOCK ALL`, `RESET PROGRESS`,
+  `VOLUME LIMIT`, `BACKUP REMINDER`.
+
+  **Hide:** `HARDWARE CALIBRATION` (`MI_PANEL`) — one OCT+ press rewrites the button map, and a
+  mis-taught map also takes away the parent's UPDATE MODE combo, which reads `panel.btn[]`; only the
+  raw power-on pair still works (`main.c:246`). Also `2ND CORE` (`MI_CPU1`, half the render headroom),
+  `USB AUDIO` (`MI_USB`) and `USB RATE` (`MI_RATE`) — the sound path, not a kid's business. Hiding is
+  a filter in the row iterator, not a table edit: `mi_sec()`/`mi_row()` index `MS_FIRST[]` directly.
 - **Not a PIN.** A 10-year-old will find it in a week. The design is guidance, not security.
 - **Volume ceiling:** `main.c:283` sets `song.master_q12 = (k10 * k10) >> 8` (0..4092) from the analog
   MASTER pot. Clamp the *result*, not `k10`, to ~70 %: lines 278–282 let the LIVE page's encoder
